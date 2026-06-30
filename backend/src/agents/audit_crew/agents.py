@@ -37,7 +37,7 @@ def get_agents() -> list[Agent]:
                 "insights about their positioning, pricing, and strategy."
             ),
             llm=llm,
-            tools=[],
+            tools=[ScrapeWebsiteTool()],
             verbose=True,
         ),
         Agent(

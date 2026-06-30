@@ -1,7 +1,10 @@
 fastapi
 uvicorn
 python-dotenv
-aiosqlite
+asyncpg
+pyotp
+qrcode
+python-multipart
 crewai
 crewai-tools
 langchain-openai

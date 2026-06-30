@@ -35,9 +35,9 @@ async def health_check():
     # Try to open the DB and run a trivial query
     # If this fails, something is wrong with the database setup
     try:
-        db = await get_db()
-        await db.execute("SELECT 1")
-        await db.close()
+        pool = await get_db()
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT 1")
         db_status = "ok"
         db_error = None
     except Exception as e:

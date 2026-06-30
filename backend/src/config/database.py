@@ -30,6 +30,7 @@ TABLE: audit_jobs
 import asyncpg
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 from src.config.settings import settings
 
@@ -44,21 +45,26 @@ _pool: asyncpg.Pool | None = None
 async def get_pool() -> asyncpg.Pool:
     """
     Return the global connection pool, creating it if needed.
-    Neon (and most cloud PostgreSQL) requires SSL — we pass it explicitly
-    via ssl='require' so asyncpg doesn't reject the connection.
+    Handles PostgreSQL URLs with optional asyncpg scheme and sslmode query params.
     """
     global _pool
     if _pool is None:
-        # Strip +asyncpg prefix — asyncpg.create_pool needs plain postgresql:// URL
-        url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+        url = settings.DATABASE_URL
+        if url.startswith("postgresql+asyncpg://"):
+            url = url.replace("postgresql+asyncpg://", "postgresql://", 1)
 
-        # Remove ?sslmode=require from URL — asyncpg doesn't parse query params
-        # for SSL. We pass ssl="require" as a kwarg instead.
-        url = url.split("?")[0]
+        parsed = urlsplit(url)
+        query = parse_qs(parsed.query)
+        ssl_mode = query.get("sslmode", [None])[0]
+
+        clean_url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", parsed.fragment))
+        ssl = None
+        if ssl_mode and ssl_mode.lower() != "disable":
+            ssl = "require"
 
         _pool = await asyncpg.create_pool(
-            url,
-            ssl="require",      # required for Neon, Supabase, and most cloud DBs
+            clean_url,
+            ssl=ssl,
             min_size=2,
             max_size=10,
         )

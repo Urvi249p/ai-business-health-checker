@@ -27,3 +27,5 @@ frontend/node_modules/
 frontend/dist/
 
 backend/sample_data/*.pdf
+
+backend/temp_reports/*.pdf

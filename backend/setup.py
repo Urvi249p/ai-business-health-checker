@@ -73,7 +73,7 @@ def main():
 
     print("\nStep 3 — Storage")
     config["DATABASE_URL"] = ask(
-        "SQLite file path", existing.get("DATABASE_URL", "./audit.db")
+        "PostgreSQL database URL", existing.get("DATABASE_URL", "postgresql+asyncpg://user:password@host:5432/dbname")
     )
     config["TEMP_DIR"] = ask(
         "Temp PDF folder", existing.get("TEMP_DIR", "./temp_reports")

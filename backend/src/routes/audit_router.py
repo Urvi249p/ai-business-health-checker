@@ -3,36 +3,32 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
 from src.config.database import create_job, get_job, get_jobs_by_user
-from src.models.business_profile import BusinessProfile
 from src.services.audit_service import run_audit_background
-from src.services.business_profile_service import profile_to_context_string
 from src.utils.auth_deps import get_current_user
 
 router = APIRouter()
 
 
+class AuditRequest(BaseModel):
+    business_description: str = Field(
+        ..., min_length=20, description="A short description of the business to audit"
+    )
+
+
 @router.post("/audit")
 async def create_audit_job(
-    payload: BusinessProfile,
+    payload: AuditRequest,
     background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Queue a new audit job and return the job ID immediately.
-
-    Accepts a structured **BusinessProfile** body. The profile is converted
-    to a formatted context string internally before being forwarded to the
-    existing CrewAI pipeline — no agent changes required.
-    """
+    """Queue a new audit job and return the job ID immediately."""
     job_id = str(uuid4())
 
-    # Convert the structured profile to a plain-text context string so the
-    # existing CrewAI pipeline and database layer need no modifications.
-    business_context = profile_to_context_string(payload)
-
-    await create_job(job_id, business_context, user_id=current_user["id"])
-    background_tasks.add_task(run_audit_background, job_id, business_context)
+    await create_job(job_id, payload.business_description, user_id=current_user["id"])
+    background_tasks.add_task(run_audit_background, job_id, payload.business_description)
 
     return {
         "job_id": job_id,
