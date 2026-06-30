@@ -1,0 +1,152 @@
+"""CrewAI task definitions for the audit workflow."""
+
+from crewai import Task
+
+
+def get_tasks(agents: list, business_description: str) -> list[Task]:
+    """Return the six ordered tasks for the audit crew."""
+    task1 = Task(
+        agent=agents[0],
+        description=f"""
+            Analyze the following business description and extract structured information:
+
+            Business Description: {business_description}
+
+            Extract and document:
+            - Business type and industry
+            - Products or services offered
+            - Target customer segment
+            - Current revenue model
+            - Geographic presence
+            - Team size (if mentioned)
+            - Key operational strengths
+            - Current challenges mentioned
+        """,
+        expected_output=(
+            "A structured business profile covering all extracted information in clear sections."
+        ),
+    )
+
+    task2 = Task(
+        agent=agents[1],
+        description=f"""
+            Based on this business: {business_description}
+
+            Identify 3 direct competitors. For each competitor:
+            - Find their website URL
+            - Use the scrape tool to visit their website
+            - Extract: what they offer, their pricing (if visible), their positioning, and their strengths
+
+            Focus on competitors that are realistic rivals for this specific business.
+        """,
+        expected_output=(
+            "A competitor analysis report covering 3 competitors with their offerings, pricing, and positioning."
+        ),
+        tools=agents[1].tools,
+    )
+
+    task3 = Task(
+        agent=agents[2],
+        description="""
+            Using the business profile from Task 1 and competitor research from Task 2,
+            produce a comprehensive SWOT analysis.
+
+            For each quadrant provide at least 4 specific points:
+            - Strengths: internal advantages this business has
+            - Weaknesses: internal limitations or gaps
+            - Opportunities: external trends or gaps this business can exploit
+            - Threats: external risks including competitor actions and market shifts
+
+            Be specific and actionable — avoid generic statements.
+        """,
+        expected_output=(
+            "A detailed SWOT analysis with at least 4 points per quadrant in Markdown format."
+        ),
+        context=[task1, task2],
+    )
+
+    task4 = Task(
+        agent=agents[3],
+        # ← FIXED: this is pricing strategy, not competitor analysis
+        description="""
+            Based on the business profile and competitor analysis:
+
+            1. Identify what pricing models competitors are using
+            2. Recommend the best pricing model for this business
+               (e.g. value-based, cost-plus, competitive, tiered)
+            3. Suggest specific price points or ranges with justification
+            4. Identify any pricing opportunities competitors are missing
+            5. Warn about any pricing risks to avoid
+        """,
+        expected_output=(
+            "A pricing strategy recommendation with model choice, suggested price points, and reasoning."
+        ),
+        context=[task1, task2],
+    )
+
+    task5 = Task(
+        agent=agents[4],
+        description="""
+            Create a practical 90-day growth action plan for this business.
+
+            Structure it as 3 phases:
+            - Days 1-30: Quick wins and foundation building
+            - Days 31-60: Growth experiments and channel development
+            - Days 61-90: Scale what works and measure results
+
+            For each phase provide:
+            - 3 to 5 specific actions with clear owners (founder, marketing, sales, etc.)
+            - Success metrics for each action
+            - Expected outcome by end of phase
+
+            Be realistic and specific to this business — not generic advice.
+        """,
+        expected_output=(
+            "A 90-day growth action plan with specific actions, owners, and metrics for each phase."
+        ),
+        context=[task1, task2, task3],
+    )
+
+    task6 = Task(
+        agent=agents[5],
+        description="""
+            Assemble a complete professional business audit report in Markdown format.
+
+            Use this exact structure:
+
+            # Business Audit & Strategy Report
+
+            ## Executive Summary
+            (3-4 sentence overview of the business and key findings)
+
+            ## Business Profile
+            (from Task 1 output)
+
+            ## Competitor Analysis
+            (from Task 2 output)
+
+            ## SWOT Analysis
+            (from Task 3 output)
+
+            ## Pricing Strategy
+            (from Task 4 output)
+
+            ## 90-Day Growth Action Plan
+            (from Task 5 output)
+
+            ## Key Recommendations
+            (top 5 most important actions the business should take)
+
+            ---
+            *Report generated by Business Audit AI*
+
+            Make it professional, well-formatted, and ready to present to a business owner.
+            Use proper Markdown: ## headers, **bold** for emphasis, bullet points and numbered lists.
+        """,
+        expected_output=(
+            "A complete, professional business audit report in Markdown format covering all sections."
+        ),
+        context=[task1, task2, task3, task4, task5],
+    )
+
+    return [task1, task2, task3, task4, task5, task6]

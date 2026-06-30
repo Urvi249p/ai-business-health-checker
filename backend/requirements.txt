@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+python-dotenv
+aiosqlite
+crewai
+crewai-tools
+langchain-openai
+reportlab
+loguru
+passlib[bcrypt]
+python-jose[cryptography]
+pydantic[email]
