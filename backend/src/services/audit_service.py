@@ -9,17 +9,19 @@ from src.utils.logger import logger
 from src.utils.pdf import convert_md_to_pdf
 
 
-async def run_audit_background(job_id: str, business_description: str) -> None:
+async def run_audit_background(job_id: str, business_profile: dict) -> None:
     """Run the audit crew pipeline in a background worker and persist the result."""
     try:
         logger.info(f"Audit job {job_id}: updating status to processing")
         await update_job_status(job_id, "processing")
 
-        logger.info(f"Audit job {job_id}: starting crew pipeline")
+        logger.info(
+            f"Audit job {job_id}: starting crew pipeline for {business_profile.get('business_name', 'Unknown')}"
+        )
         loop = asyncio.get_event_loop()
         audit_crew = AuditCrew()
         markdown_result = await loop.run_in_executor(
-            None, audit_crew.run, business_description
+            None, audit_crew.run, business_profile
         )
 
         logger.info(f"Audit job {job_id}: crew finished, saving result")

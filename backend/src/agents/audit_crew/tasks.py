@@ -3,150 +3,195 @@
 from crewai import Task
 
 
-def get_tasks(agents: list, business_description: str) -> list[Task]:
-    """Return the six ordered tasks for the audit crew."""
+def get_tasks(agents: list, business_profile: dict) -> list[Task]:
+    """Return the five ordered tasks for the audit crew.
+    
+    Args:
+        agents: List of 5 agents [Business Analyst, SWOT Analyst, 
+                Pricing Consultant, Growth Consultant, Report Writer]
+        business_profile: Structured dict with business information
+    """
+
+    # Format structured profile into a readable block for prompts
+    profile_text = f"""
+    Business Name:          {business_profile.get('business_name', 'N/A')}
+    Business Type:          {business_profile.get('business_type', 'N/A')}
+    Location:               {business_profile.get('location', 'N/A')}
+    Years in Business:      {business_profile.get('years_in_business', 'N/A')}
+    Team Size:              {business_profile.get('team_size', 'N/A')}
+    Business Model:         {business_profile.get('business_model', 'N/A')}
+    Customer Type:          {business_profile.get('customer_type', 'N/A')}
+    Monthly Revenue Range:  {business_profile.get('monthly_revenue_range', 'N/A')}
+    Customer Sources:       {', '.join(business_profile.get('customer_sources', []))}
+    Marketing Channels:     {', '.join(business_profile.get('current_marketing_channels', []))}
+    Biggest Challenges:     {', '.join(business_profile.get('biggest_challenges', []))}
+    Goals:                  {', '.join(business_profile.get('goals', []))}
+    Additional Notes:       {business_profile.get('additional_notes', 'N/A')}
+    """
+
     task1 = Task(
         agent=agents[0],
         description=f"""
-            Analyze the following business description and extract structured information:
+            Analyze the following structured business profile and produce a comprehensive 
+            business analysis. You have real, factual information — do not make assumptions 
+            or invent data not present in the profile.
 
-            Business Description: {business_description}
+            BUSINESS PROFILE:
+            {profile_text}
 
-            Extract and document:
-            - Business type and industry
-            - Products or services offered
-            - Target customer segment
-            - Current revenue model
-            - Geographic presence
-            - Team size (if mentioned)
-            - Key operational strengths
-            - Current challenges mentioned
+            Analyze and document:
+            - Core business model and industry positioning
+            - Products or services offered and their value proposition
+            - Target customer segment and how they are currently reached
+            - Revenue model and financial health indicators
+            - Geographic presence and market scope
+            - Team capacity relative to business size
+            - Key operational strengths based on the facts provided
+            - Current challenges the owner has identified
+            - Alignment between stated goals and current operations
         """,
         expected_output=(
-            "A structured business profile covering all extracted information in clear sections."
+            "A structured business analysis covering all dimensions in clear sections, "
+            "grounded entirely in the provided profile data."
         ),
     )
 
     task2 = Task(
         agent=agents[1],
         description=f"""
-            Based on this business: {business_description}
+            Using the business analysis from Task 1 and the original business profile below,
+            produce a comprehensive SWOT analysis grounded in facts — not generic statements.
 
-            Identify 3 direct competitors. For each competitor:
-            - Find their website URL
-            - Use the scrape tool to visit their website
-            - Extract: what they offer, their pricing (if visible), their positioning, and their strengths
+            BUSINESS PROFILE:
+            {profile_text}
 
-            Focus on competitors that are realistic rivals for this specific business.
+            For each quadrant provide at least 4 specific, evidence-based points:
+
+            - Strengths: internal advantages this business demonstrably has
+              (e.g. if team_size is small and years_in_business is high → lean, experienced operation)
+            
+            - Weaknesses: internal limitations evident from the profile
+              (e.g. if customer_sources is only walk-ins → limited digital reach)
+            
+            - Opportunities: external trends or gaps this business can realistically exploit
+              given its location, business model, and goals
+            
+            - Threats: external risks relevant to this business type, location, and market
+
+            Every point must be specific to THIS business. No generic filler.
         """,
         expected_output=(
-            "A competitor analysis report covering 3 competitors with their offerings, pricing, and positioning."
+            "A detailed SWOT analysis with at least 4 specific, evidence-based points "
+            "per quadrant in Markdown format."
         ),
-        tools=agents[1].tools,
+        context=[task1],
     )
 
     task3 = Task(
         agent=agents[2],
-        description="""
-            Using the business profile from Task 1 and competitor research from Task 2,
-            produce a comprehensive SWOT analysis.
+        description=f"""
+            Based on the business profile and SWOT analysis, recommend the optimal 
+            pricing strategy for this business.
 
-            For each quadrant provide at least 4 specific points:
-            - Strengths: internal advantages this business has
-            - Weaknesses: internal limitations or gaps
-            - Opportunities: external trends or gaps this business can exploit
-            - Threats: external risks including competitor actions and market shifts
+            BUSINESS PROFILE:
+            {profile_text}
 
-            Be specific and actionable — avoid generic statements.
+            Your recommendations must account for:
+            1. The business model ({business_profile.get('business_model', 'N/A')}) 
+               and customer type ({business_profile.get('customer_type', 'N/A')})
+            2. The monthly revenue range ({business_profile.get('monthly_revenue_range', 'N/A')}) 
+               to ensure pricing is realistic
+            3. The identified challenges: {', '.join(business_profile.get('biggest_challenges', []))}
+            4. The stated goals: {', '.join(business_profile.get('goals', []))}
+
+            Provide:
+            - Recommended pricing model with clear justification
+            - Specific price points or ranges where possible
+            - Quick pricing wins the business can implement immediately
+            - Pricing mistakes to avoid given their situation
         """,
         expected_output=(
-            "A detailed SWOT analysis with at least 4 points per quadrant in Markdown format."
+            "A pricing strategy recommendation with model choice, suggested price points, "
+            "justification, and immediate action steps."
         ),
         context=[task1, task2],
     )
 
     task4 = Task(
         agent=agents[3],
-        # ← FIXED: this is pricing strategy, not competitor analysis
-        description="""
-            Based on the business profile and competitor analysis:
+        description=f"""
+            Create a practical, realistic 90-day growth action plan for this business.
+            Every action must be grounded in the actual business situation — not generic advice.
 
-            1. Identify what pricing models competitors are using
-            2. Recommend the best pricing model for this business
-               (e.g. value-based, cost-plus, competitive, tiered)
-            3. Suggest specific price points or ranges with justification
-            4. Identify any pricing opportunities competitors are missing
-            5. Warn about any pricing risks to avoid
-        """,
-        expected_output=(
-            "A pricing strategy recommendation with model choice, suggested price points, and reasoning."
-        ),
-        context=[task1, task2],
-    )
+            BUSINESS PROFILE:
+            {profile_text}
 
-    task5 = Task(
-        agent=agents[4],
-        description="""
-            Create a practical 90-day growth action plan for this business.
+            Structure the plan as 3 phases:
 
-            Structure it as 3 phases:
-            - Days 1-30: Quick wins and foundation building
-            - Days 31-60: Growth experiments and channel development
-            - Days 61-90: Scale what works and measure results
+            Phase 1 — Days 1–30: Quick wins and foundation
+            (Focus on the biggest challenges: {', '.join(business_profile.get('biggest_challenges', []))})
+
+            Phase 2 — Days 31–60: Growth experiments
+            (Leverage existing channels: {', '.join(business_profile.get('customer_sources', []))})
+
+            Phase 3 — Days 61–90: Scale and measure
+            (Work toward goals: {', '.join(business_profile.get('goals', []))})
 
             For each phase provide:
             - 3 to 5 specific actions with clear owners (founder, marketing, sales, etc.)
             - Success metrics for each action
             - Expected outcome by end of phase
 
-            Be realistic and specific to this business — not generic advice.
+            Be realistic given team size of {business_profile.get('team_size', 'N/A')} people.
         """,
         expected_output=(
-            "A 90-day growth action plan with specific actions, owners, and metrics for each phase."
+            "A 90-day growth action plan with specific actions, owners, metrics, "
+            "and expected outcomes for each phase — tailored to this exact business."
         ),
         context=[task1, task2, task3],
     )
 
-    task6 = Task(
-        agent=agents[5],
+    task5 = Task(
+        agent=agents[4],
         description="""
-            Assemble a complete professional business audit report in Markdown format.
+            Assemble a complete professional business audit report in Markdown format
+            using the outputs from all previous tasks.
 
             Use this exact structure:
 
             # Business Audit & Strategy Report
+            ### {Business Name} — Confidential
 
             ## Executive Summary
-            (3-4 sentence overview of the business and key findings)
+            (3-4 sentence overview of the business and the most important findings)
 
-            ## Business Profile
-            (from Task 1 output)
-
-            ## Competitor Analysis
-            (from Task 2 output)
+            ## Business Profile & Analysis
+            (from Task 1 output — structured and well formatted)
 
             ## SWOT Analysis
-            (from Task 3 output)
+            (from Task 2 output — use a clean table or well-structured sections)
 
             ## Pricing Strategy
-            (from Task 4 output)
+            (from Task 3 output)
 
             ## 90-Day Growth Action Plan
-            (from Task 5 output)
+            (from Task 4 output — use a clear phase-by-phase structure)
 
             ## Key Recommendations
-            (top 5 most important actions the business should take)
+            (top 5 most important actions the business should take, prioritized by impact)
 
             ---
             *Report generated by Business Audit AI*
 
             Make it professional, well-formatted, and ready to present to a business owner.
-            Use proper Markdown: ## headers, **bold** for emphasis, bullet points and numbered lists.
+            Use proper Markdown: ## headers, **bold** for emphasis, bullet points and tables.
+            The report should feel like it was written by a senior consultant, not generated by AI.
         """,
         expected_output=(
-            "A complete, professional business audit report in Markdown format covering all sections."
+            "A complete, professional business audit report in Markdown format "
+            "covering all sections with consistent formatting throughout."
         ),
-        context=[task1, task2, task3, task4, task5],
+        context=[task1, task2, task3, task4],
     )
 
-    return [task1, task2, task3, task4, task5, task6]
+    return [task1, task2, task3, task4, task5]

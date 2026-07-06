@@ -1,6 +1,5 @@
 from crewai import Agent
 from crewai.llm import LLM
-from crewai_tools import ScrapeWebsiteTool
 
 from src.config.settings import settings
 
@@ -11,42 +10,29 @@ def _create_llm() -> LLM:
 
 
 def get_agents() -> list[Agent]:
-    """Return the six audit agents used by the CrewAI pipeline."""
+    """Return the five audit agents used by the CrewAI pipeline."""
     llm = _create_llm()
-
 
     return [
         Agent(
             role="Business Analyst",
-            goal="Extract and structure key business information from the description provided",
+            goal="Extract and structure key business information from the structured profile provided",
             backstory=(
                 "You are an expert business analyst with 15 years of experience analyzing "
                 "businesses across industries. You identify core business model, target market, "
-                "revenue streams, and operational strengths from raw descriptions."
+                "revenue streams, and operational strengths from structured business data."
             ),
             llm=llm,
             tools=[],
             verbose=True,
         ),
         Agent(
-            role="Competitor Intelligence Researcher",
-            goal="Research and analyze 3 competitors relevant to the business",
-            backstory=(
-                "You are a market intelligence expert who specializes in competitive analysis. "
-                "You find real competitors, scrape their websites, and extract meaningful "
-                "insights about their positioning, pricing, and strategy."
-            ),
-            llm=llm,
-            tools=[ScrapeWebsiteTool()],
-            verbose=True,
-        ),
-        Agent(
             role="Strategic SWOT Analyst",
-            goal="Produce a detailed SWOT analysis based on the business profile and competitor research",
+            goal="Produce a detailed SWOT analysis based on the structured business profile",
             backstory=(
                 "You are a strategic consultant who has conducted SWOT analyses for hundreds "
                 "of businesses. You identify non-obvious strengths, realistic weaknesses, "
-                "genuine market opportunities, and credible threats."
+                "genuine market opportunities, and credible threats directly from business facts."
             ),
             llm=llm,
             tools=[],
@@ -57,8 +43,8 @@ def get_agents() -> list[Agent]:
             goal="Recommend the optimal pricing model and strategy for the business",
             backstory=(
                 "You are a pricing expert who has helped startups and SMEs find their ideal "
-                "pricing strategy. You consider competitor pricing, perceived value, customer "
-                "segments, and business goals to recommend actionable pricing approaches."
+                "pricing strategy. You consider perceived value, customer segments, business "
+                "goals, and industry norms to recommend actionable pricing approaches."
             ),
             llm=llm,
             tools=[],
@@ -70,7 +56,7 @@ def get_agents() -> list[Agent]:
             backstory=(
                 "You are a growth strategist who specializes in practical, executable growth "
                 "plans for small and medium businesses. You focus on quick wins, measurable "
-                "milestones, and realistic timelines."
+                "milestones, and realistic timelines tailored to the business's actual situation."
             ),
             llm=llm,
             tools=[],
@@ -86,7 +72,7 @@ def get_agents() -> list[Agent]:
                 "You are a professional business report writer who transforms raw analysis "
                 "into polished, executive-ready reports. You write clearly, use proper "
                 "Markdown formatting with headers and sections, and make complex insights "
-                "easy to understand."
+                "easy to understand for business owners."
             ),
             llm=llm,
             tools=[],

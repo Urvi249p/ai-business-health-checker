@@ -4,6 +4,7 @@ from pathlib import Path
 
 from src.config.settings import settings
 from src.utils.logger import logger
+from src.utils.report_access import REPORT_RETENTION_SECONDS
 
 
 async def start_cleanup_worker() -> None:
@@ -20,7 +21,7 @@ async def start_cleanup_worker() -> None:
                     if file_path.suffix.lower() in {".pdf", ".txt"}:
                         try:
                             age = now - file_path.stat().st_mtime
-                            if age > 1800:
+                            if age > REPORT_RETENTION_SECONDS:
                                 file_path.unlink()
                                 deleted += 1
                         except Exception as exc:

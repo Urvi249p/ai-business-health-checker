@@ -27,10 +27,12 @@ TABLE: audit_jobs
   (unchanged)
 """
 
-import asyncpg
+import json
 from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import parse_qs, urlsplit, urlunsplit
+
+import asyncpg
 
 from src.config.settings import settings
 
@@ -131,9 +133,11 @@ async def init_db() -> None:
         # Safe migrations — add columns if they don't exist yet
         # (handles existing DBs that were created before these columns)
         for column_sql in [
+            "ALTER TABLE audit_jobs ADD COLUMN IF NOT EXISTS current_agent INTEGER DEFAULT 0",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_2fa_enabled BOOLEAN NOT NULL DEFAULT FALSE",
             "ALTER TABLE audit_jobs ADD COLUMN IF NOT EXISTS user_id TEXT",
+            "ALTER TABLE audit_jobs ADD COLUMN IF NOT EXISTS business_profile JSONB",
         ]:
             await conn.execute(column_sql)
 
@@ -218,15 +222,21 @@ async def disable_user_2fa(user_id: str) -> None:
 
 # ── Audit job functions ───────────────────────────────────────────────────────
 
-async def create_job(job_id: str, business_description: str, user_id: str = None) -> None:
+async def create_job(job_id: str, business_profile: dict, user_id: str = None) -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO audit_jobs (id, status, business_description, created_at, updated_at, user_id)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO audit_jobs (id, status, business_description, business_profile, created_at, updated_at, user_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             """,
-            job_id, "queued", business_description, _now(), _now(), user_id,
+            job_id,
+            "queued",
+            business_profile.get("business_name", "Unknown Business"),
+            json.dumps(business_profile),
+            _now(),
+            _now(),
+            user_id,
         )
 
 
@@ -279,4 +289,13 @@ async def fail_job(job_id: str, error: str) -> None:
             WHERE id = $3
             """,
             error, _now(), job_id,
+        )
+
+async def update_job_agent(job_id: str, agent_index: int) -> None:
+    """Update which agent (0-5) is currently running for a job."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE audit_jobs SET current_agent = $1, updated_at = $2 WHERE id = $3",
+            agent_index, _now(), job_id,
         )
