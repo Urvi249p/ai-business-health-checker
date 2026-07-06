@@ -9,8 +9,33 @@ const agentSteps = [
   { name: 'Business Report Writer', description: 'Assemble all research into a final report' },
 ];
 
+const initialFormState = {
+  business_name: '',
+  business_type: '',
+  location: '',
+  years_in_business: '',
+  team_size: '',
+  business_model: '',
+  customer_type: '',
+  monthly_revenue_range: '',
+  customer_sources: [],
+  current_marketing_channels: [],
+  biggest_challenges: [],
+  goals: [],
+  additional_notes: '',
+};
+
+const businessModelOptions = ['B2B', 'B2C', 'D2C', 'Marketplace', 'Other'];
+const customerTypeOptions = ['Retail', 'Enterprise', 'SME', 'Consumer', 'Mixed'];
+const revenueOptions = ['Under ₹1L', '₹1L–₹5L', '₹5L–₹20L', '₹20L–₹50L', 'Above ₹50L', 'Prefer not to say'];
+const tagOptions = ['Walk-ins', 'Instagram', 'Facebook', 'Google Ads', 'WhatsApp', 'Referrals', 'Website', 'LinkedIn', 'Cold Outreach', 'Other'];
+const challengeOptions = ['Low sales', 'High costs', 'Low repeat customers', 'Poor online presence', 'Hiring', 'Cash flow', 'Pricing', 'Competition', 'Operations', 'Marketing ROI'];
+const goalOptions = ['Increase revenue', 'Reduce costs', 'Expand to new markets', 'Build online presence', 'Improve retention', 'Launch new product', 'Raise funding', 'Automate operations'];
+
 function DashboardPage({ apiBaseUrl, token, view = 'overview' }) {
-  const [description, setDescription] = useState('');
+  const [formData, setFormData] = useState(initialFormState);
+  const [currentStep, setCurrentStep] = useState(1);
+  const [stepErrors, setStepErrors] = useState({});
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -106,6 +131,48 @@ function DashboardPage({ apiBaseUrl, token, view = 'overview' }) {
     return () => window.clearInterval(intervalId);
   }, [pipelineStatus, activeAgentIndex]);
 
+  const updateField = (field, value) => {
+    setFormData((current) => ({ ...current, [field]: value }));
+    setStepErrors((current) => ({ ...current, [field]: '' }));
+    if (error) setError('');
+  };
+
+  const toggleTagSelection = (field, value) => {
+    setFormData((current) => {
+      const selected = current[field] || [];
+      return {
+        ...current,
+        [field]: selected.includes(value)
+          ? selected.filter((item) => item !== value)
+          : [...selected, value],
+      };
+    });
+    if (error) setError('');
+  };
+
+  const handleNext = () => {
+    if (currentStep === 1) {
+      const errors = {};
+      if (!formData.business_name.trim()) errors.business_name = 'Business name is required';
+      if (!formData.business_type.trim()) errors.business_type = 'Business type is required';
+      setStepErrors(errors);
+      if (Object.keys(errors).length > 0) {
+        setError('Please complete the required fields to continue.');
+        return;
+      }
+    }
+
+    setStepErrors({});
+    setError('');
+    setCurrentStep((current) => Math.min(current + 1, 4));
+  };
+
+  const handleBack = () => {
+    setError('');
+    setStepErrors({});
+    setCurrentStep((current) => Math.max(current - 1, 1));
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setLoading(true);
@@ -113,13 +180,29 @@ function DashboardPage({ apiBaseUrl, token, view = 'overview' }) {
     setMessage('');
 
     try {
+      const payload = {
+        business_name: formData.business_name.trim(),
+        business_type: formData.business_type.trim(),
+        location: formData.location.trim() || null,
+        years_in_business: formData.years_in_business ? Number(formData.years_in_business) : null,
+        team_size: formData.team_size ? Number(formData.team_size) : null,
+        business_model: formData.business_model || null,
+        customer_type: formData.customer_type || null,
+        monthly_revenue_range: formData.monthly_revenue_range || null,
+        customer_sources: formData.customer_sources || [],
+        current_marketing_channels: formData.current_marketing_channels || [],
+        biggest_challenges: formData.biggest_challenges || [],
+        goals: formData.goals || [],
+        additional_notes: formData.additional_notes.trim() || null,
+      };
+
       const response = await fetch(`${apiBaseUrl}/audit`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ business_description: description }),
+        body: JSON.stringify(payload),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Unable to start audit');
@@ -128,7 +211,9 @@ function DashboardPage({ apiBaseUrl, token, view = 'overview' }) {
       setActiveAgentIndex(-1);
       setFailedAgentIndex(-1);
       setMessage(`Audit queued with job id ${data.job_id}`);
-      setDescription('');
+      setFormData(initialFormState);
+      setCurrentStep(1);
+      setStepErrors({});
       await loadHistory();
     } catch (err) {
       setError(err.message || 'Unable to start audit');
@@ -145,7 +230,8 @@ function DashboardPage({ apiBaseUrl, token, view = 'overview' }) {
     return 'queued';
   };
 
-  const latestCompletedJob = [...history].reverse().find((job) => formatStatus(job.status) === 'completed');
+  const completedReports = history.filter((job) => formatStatus(job.status) === 'completed');
+  const latestCompletedJob = completedReports.find((job) => job.report_available) || completedReports[0] || null;
 
   const handleDownload = async (jobId) => {
     if (!jobId) return;
@@ -183,28 +269,217 @@ function DashboardPage({ apiBaseUrl, token, view = 'overview' }) {
 
   const renderOverview = () => (
     <div className="dashboard-grid">
-      <section className="card card--hero">
-        <div className="card__header">
+      <section className="card card--hero audit-form-card">
+        <div className="card__header audit-form-card__header">
           <div>
             <p className="eyebrow">New audit</p>
-            <h2>Describe your business</h2>
+            <h2>{currentStep === 1 ? 'Tell us about your business' : currentStep === 2 ? 'How does your business operate?' : currentStep === 3 ? 'Where do your customers come from?' : 'What are you trying to solve?'}</h2>
+          </div>
+          <div className="audit-progress">
+            <span className="audit-progress__label">Step {currentStep} of 4</span>
+            <div className="audit-progress__bar">
+              <div className="audit-progress__fill" style={{ width: `${(currentStep / 4) * 100}%` }} />
+            </div>
           </div>
         </div>
 
-        <p className="helper-text">Paste a concise overview of your company, market, and growth goals to generate a polished health report.</p>
+        <div className="audit-form-card__body">
+          <p className="helper-text">
+            {currentStep === 1
+              ? 'We\'ll use this to personalize your audit.'
+              : currentStep === 2
+                ? 'This helps us tailor the strategy to your model.'
+                : currentStep === 3
+                  ? 'Select all that apply.'
+                  : 'Be honest — this directly shapes your audit recommendations.'}
+          </p>
 
-        <form onSubmit={handleSubmit}>
-          <label>
-            Business description
-            <textarea value={description} onChange={(event) => setDescription(event.target.value)} required minLength={20} />
-          </label>
-          <button className="btn btn--primary" disabled={loading}>
-            {loading ? 'Submitting...' : 'Start audit'}
-          </button>
-        </form>
+          <form onSubmit={handleSubmit}>
+            {currentStep === 1 ? (
+              <div className="audit-step">
+                <div className="audit-grid">
+                  <label>
+                    Business Name
+                    <input
+                      value={formData.business_name}
+                      onChange={(event) => updateField('business_name', event.target.value)}
+                      placeholder="e.g. Northstar Studio"
+                      className={stepErrors.business_name ? 'audit-input audit-input--error' : 'audit-input'}
+                    />
+                    {stepErrors.business_name ? <span className="error-text">Business name is required</span> : null}
+                  </label>
+                  <label>
+                    Business Type
+                    <input
+                      value={formData.business_type}
+                      onChange={(event) => updateField('business_type', event.target.value)}
+                      placeholder="e.g. Bakery, SaaS, Consulting"
+                      className={stepErrors.business_type ? 'audit-input audit-input--error' : 'audit-input'}
+                    />
+                    {stepErrors.business_type ? <span className="error-text">Business type is required</span> : null}
+                  </label>
+                </div>
+                <div className="audit-grid">
+                  <label>
+                    Location
+                    <input value={formData.location} onChange={(event) => updateField('location', event.target.value)} placeholder="e.g. Mumbai, Delhi" />
+                  </label>
+                  <label>
+                    Years in Business
+                    <input type="number" value={formData.years_in_business} onChange={(event) => updateField('years_in_business', event.target.value)} min="0" />
+                  </label>
+                </div>
+                <div className="audit-grid">
+                  <label>
+                    Team Size
+                    <input type="number" value={formData.team_size} onChange={(event) => updateField('team_size', event.target.value)} min="0" placeholder="Number of employees" />
+                  </label>
+                </div>
+              </div>
+            ) : null}
 
-        {message ? <p className="success-text">{message}</p> : null}
-        {error ? <p className="error-text">{error}</p> : null}
+            {currentStep === 2 ? (
+              <div className="audit-step">
+                <label>Business Model</label>
+                <div className="pill-group">
+                  {businessModelOptions.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      className={`pill-button ${formData.business_model === option ? 'pill-button--selected' : ''}`}
+                      onClick={() => updateField('business_model', option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+
+                <label>Customer Type</label>
+                <div className="pill-group">
+                  {customerTypeOptions.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      className={`pill-button ${formData.customer_type === option ? 'pill-button--selected' : ''}`}
+                      onClick={() => updateField('customer_type', option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+
+                <label>Monthly Revenue Range</label>
+                <div className="pill-group">
+                  {revenueOptions.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      className={`pill-button ${formData.monthly_revenue_range === option ? 'pill-button--selected' : ''}`}
+                      onClick={() => updateField('monthly_revenue_range', option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {currentStep === 3 ? (
+              <div className="audit-step">
+                <label>Customer Sources</label>
+                <div className="pill-group">
+                  {tagOptions.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      className={`pill-button ${formData.customer_sources.includes(option) ? 'pill-button--selected' : ''}`}
+                      onClick={() => toggleTagSelection('customer_sources', option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+
+                <label>Which channels are you actively marketing on?</label>
+                <div className="pill-group">
+                  {tagOptions.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      className={`pill-button ${formData.current_marketing_channels.includes(option) ? 'pill-button--selected' : ''}`}
+                      onClick={() => toggleTagSelection('current_marketing_channels', option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {currentStep === 4 ? (
+              <div className="audit-step">
+                <label>Biggest Challenges</label>
+                <div className="pill-group">
+                  {challengeOptions.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      className={`pill-button ${formData.biggest_challenges.includes(option) ? 'pill-button--selected' : ''}`}
+                      onClick={() => toggleTagSelection('biggest_challenges', option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+
+                <label>Goals</label>
+                <div className="pill-group">
+                  {goalOptions.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      className={`pill-button ${formData.goals.includes(option) ? 'pill-button--selected' : ''}`}
+                      onClick={() => toggleTagSelection('goals', option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+
+                <label>
+                  Additional Notes
+                  <textarea
+                    value={formData.additional_notes}
+                    onChange={(event) => updateField('additional_notes', event.target.value)}
+                    maxLength={500}
+                    placeholder="Anything else you'd like the AI to know about your business?"
+                  />
+                  <span className="helper-text helper-text--tight">{formData.additional_notes.length} / 500 characters</span>
+                </label>
+              </div>
+            ) : null}
+
+            <div className="audit-step-actions">
+              {currentStep > 1 ? (
+                <button type="button" className="btn btn--secondary" onClick={handleBack}>
+                  Back
+                </button>
+              ) : <div />}
+              {currentStep < 4 ? (
+                <button type="button" className="btn btn--primary" onClick={handleNext} disabled={loading}>
+                  Next
+                </button>
+              ) : (
+                <button className="btn btn--primary" disabled={loading} type="submit">
+                  {loading ? 'Starting...' : 'Start My Audit →'}
+                </button>
+              )}
+            </div>
+          </form>
+
+          {message ? <p className="success-text">{message}</p> : null}
+          {error ? <p className="error-text">{error}</p> : null}
+        </div>
       </section>
 
       <section className="card">
@@ -259,52 +534,64 @@ function DashboardPage({ apiBaseUrl, token, view = 'overview' }) {
             className="btn btn--success"
             type="button"
             onClick={() => handleDownload(latestCompletedJob?.job_id)}
-            disabled={!latestCompletedJob || downloadingJobId === latestCompletedJob?.job_id}
+            disabled={!latestCompletedJob || !latestCompletedJob.report_available || downloadingJobId === latestCompletedJob?.job_id}
           >
-            {downloadingJobId === latestCompletedJob?.job_id ? 'Preparing...' : 'Download PDF'}
+            {downloadingJobId === latestCompletedJob?.job_id ? 'Preparing...' : latestCompletedJob?.report_available ? 'Download PDF' : 'Unavailable'}
           </button>
         </div>
 
         <div className="pdf-panel">
           <div>
-            <p className="helper-text">Your latest report remains available for the next</p>
-            <div className="countdown-value">{countdownLabel}</div>
+            <p className="helper-text">{latestCompletedJob?.report_available ? 'Your latest report remains available for the next' : 'The latest report has expired and will be removed automatically.'}</p>
+            <div className="countdown-value">{latestCompletedJob?.report_available ? countdownLabel : '00:00'}</div>
           </div>
-          <div className="pdf-pill">Expires soon</div>
+          <div className="pdf-pill">{latestCompletedJob?.report_available ? 'Expires soon' : 'Unavailable'}</div>
         </div>
       </section>
 
       <section className="card">
         <div className="card__header">
           <div>
-            <p className="eyebrow">Recent activity</p>
-            <h3>Audit history</h3>
+            <p className="eyebrow">What to expect</p>
+            <h3>What your audit covers</h3>
           </div>
         </div>
 
-        {history.length === 0 ? (
-          <p className="helper-text">No audits yet. Submit one above to see it here.</p>
-        ) : (
-          <div className="history-table">
-            <div className="history-table__head">
-              <span>Job ID</span>
-              <span>Status</span>
-              <span>Created</span>
-            </div>
-            {history.map((job) => (
-              <div className="history-table__row" key={job.job_id}>
-                <div>
-                  <p className="history-id">{job.job_id}</p>
-                  <span className="history-subtext">Business health audit</span>
-                </div>
-                <span className={`status-pill status-pill--${formatStatus(job.status)}`}>
-                  {job.status}
-                </span>
-                <span className="history-date">{new Date(job.created_at).toLocaleString()}</span>
-              </div>
-            ))}
+        <p className="helper-text">Our AI analyses your business across 4 dimensions and delivers a professional PDF report.</p>
+
+        <div className="expectation-grid">
+          <div className="expectation-card">
+            <div className="expectation-card__icon">◻</div>
+            <h4>SWOT Analysis</h4>
+            <p>Strengths, weaknesses, opportunities and threats specific to your business</p>
           </div>
-        )}
+          <div className="expectation-card">
+            <div className="expectation-card__icon">🏷</div>
+            <h4>Pricing Strategy</h4>
+            <p>The optimal pricing model and specific price points for your market and goals</p>
+          </div>
+          <div className="expectation-card">
+            <div className="expectation-card__icon">↗</div>
+            <h4>90-Day Growth Plan</h4>
+            <p>A phase-by-phase action plan with clear owners, metrics and expected outcomes</p>
+          </div>
+          <div className="expectation-card">
+            <div className="expectation-card__icon">📄</div>
+            <h4>PDF Report</h4>
+            <p>A professionally formatted report ready to present to partners, investors or your team</p>
+          </div>
+        </div>
+
+        <div className="expectation-strip">
+          <div className="expectation-strip__item">
+            <span className="expectation-strip__icon">🕒</span>
+            <span>Estimated time: 3–5 minutes depending on business complexity</span>
+          </div>
+          <div className="expectation-strip__item expectation-strip__item--secondary">
+            <span className="expectation-strip__icon">✓</span>
+            <span>Report auto-deleted after 30 minutes — download promptly</span>
+          </div>
+        </div>
       </section>
     </div>
   );
@@ -319,30 +606,32 @@ function DashboardPage({ apiBaseUrl, token, view = 'overview' }) {
           </div>
         </div>
 
-        <p className="helper-text">Download the latest completed audit reports whenever you need a shareable summary.</p>
+        <p className="helper-text">Only the most recent completed report remains available for download. Older reports expire automatically after 10 minutes.</p>
 
         <div className="report-list">
-          {history.filter((job) => formatStatus(job.status) === 'completed').length === 0 ? (
+          {completedReports.length === 0 ? (
             <p className="helper-text">Completed reports will appear here once an audit finishes.</p>
           ) : (
-            history
-              .filter((job) => formatStatus(job.status) === 'completed')
-              .map((job) => (
+            completedReports.map((job, index) => {
+              const isLatest = index === 0;
+              const canDownload = isLatest && job.report_available;
+              return (
                 <div className="report-item" key={job.job_id}>
                   <div>
                     <p className="history-id">{job.job_id}</p>
-                    <span className="history-subtext">Completed audit report</span>
+                    <span className="history-subtext">{isLatest ? 'Latest available report' : 'Expired report unavailable'}</span>
                   </div>
                   <button
-                    className="btn btn--success"
+                    className={`btn ${canDownload ? 'btn--success' : 'btn--secondary'}`}
                     type="button"
                     onClick={() => handleDownload(job.job_id)}
-                    disabled={downloadingJobId === job.job_id}
+                    disabled={!canDownload || downloadingJobId === job.job_id}
                   >
-                    {downloadingJobId === job.job_id ? 'Preparing...' : 'Download PDF'}
+                    {downloadingJobId === job.job_id ? 'Preparing...' : canDownload ? 'Download PDF' : 'Unavailable'}
                   </button>
                 </div>
-              ))
+              );
+            })
           )}
         </div>
       </section>
@@ -355,7 +644,7 @@ function DashboardPage({ apiBaseUrl, token, view = 'overview' }) {
           </div>
         </div>
 
-        <p className="helper-text">Each report includes a concise executive summary, the audit pipeline status, and next-step recommendations.</p>
+        <p className="helper-text">Only the newest completed report can be downloaded. Older reports become unavailable once the 10-minute retention window expires.</p>
       </section>
     </div>
   );
