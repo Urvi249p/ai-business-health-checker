@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import AuditlyBrand from '../components/AuditlyBrand';
 
 function AuthPage({ apiBaseUrl, onLogin }) {
   const [mode, setMode] = useState('login');
@@ -168,7 +169,8 @@ function AuthPage({ apiBaseUrl, onLogin }) {
 
   const renderLoginView = () => (
     <div className="auth-card__transition">
-      <div className="auth-card__header">
+      <div className="auth-card__header auth-card__header--brand">
+        <AuditlyBrand size={28} className="auth-card__brand" wordmarkClassName="auth-card__wordmark" />
         <p className="eyebrow">Trusted audit workspace</p>
         <h2>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2>
         <p className="helper-text">Securely submit your business details and track every audit stage from one calm workspace.</p>

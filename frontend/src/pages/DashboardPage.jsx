@@ -230,8 +230,12 @@ function DashboardPage({ apiBaseUrl, token, view = 'overview' }) {
     return 'queued';
   };
 
-  const completedReports = history.filter((job) => formatStatus(job.status) === 'completed');
-  const latestCompletedJob = completedReports.find((job) => job.report_available) || completedReports[0] || null;
+  const completedReports = history.filter((job) => formatStatus(job.status) === 'completed' && job.report_available);
+  const latestCompletedJob = completedReports[0] || null;
+  const getBusinessLabel = (job) => {
+    const label = job.business_name || job.business_description || 'Untitled business';
+    return label.length > 40 ? `${label.slice(0, 40)}...` : label;
+  };
 
   const handleDownload = async (jobId) => {
     if (!jobId) return;
@@ -606,45 +610,35 @@ function DashboardPage({ apiBaseUrl, token, view = 'overview' }) {
           </div>
         </div>
 
-        <p className="helper-text">Only the most recent completed report remains available for download. Older reports expire automatically after 10 minutes.</p>
-
         <div className="report-list">
           {completedReports.length === 0 ? (
-            <p className="helper-text">Completed reports will appear here once an audit finishes.</p>
+            <div className="empty-state">
+              <div className="empty-state__icon">📄</div>
+              <h3>No reports available</h3>
+              <p>Completed reports are available for 30 minutes after generation. Start a new audit to generate one.</p>
+              <button className="btn btn--primary" type="button" onClick={() => window.location.assign('/overview')}>
+                Start New Audit
+              </button>
+            </div>
           ) : (
-            completedReports.map((job, index) => {
-              const isLatest = index === 0;
-              const canDownload = isLatest && job.report_available;
-              return (
-                <div className="report-item" key={job.job_id}>
-                  <div>
-                    <p className="history-id">{job.job_id}</p>
-                    <span className="history-subtext">{isLatest ? 'Latest available report' : 'Expired report unavailable'}</span>
-                  </div>
-                  <button
-                    className={`btn ${canDownload ? 'btn--success' : 'btn--secondary'}`}
-                    type="button"
-                    onClick={() => handleDownload(job.job_id)}
-                    disabled={!canDownload || downloadingJobId === job.job_id}
-                  >
-                    {downloadingJobId === job.job_id ? 'Preparing...' : canDownload ? 'Download PDF' : 'Unavailable'}
-                  </button>
+            completedReports.map((job) => (
+              <div className="report-item" key={job.job_id}>
+                <div>
+                  <p className="history-id">{getBusinessLabel(job)}</p>
+                  <span className="history-subtext">{new Date(job.updated_at || job.created_at).toLocaleString()}</span>
                 </div>
-              );
-            })
+                <button
+                  className="btn btn--success"
+                  type="button"
+                  onClick={() => handleDownload(job.job_id)}
+                  disabled={downloadingJobId === job.job_id}
+                >
+                  {downloadingJobId === job.job_id ? 'Preparing...' : 'Download PDF'}
+                </button>
+              </div>
+            ))
           )}
         </div>
-      </section>
-
-      <section className="card">
-        <div className="card__header">
-          <div>
-            <p className="eyebrow">Report availability</p>
-            <h3>Download options</h3>
-          </div>
-        </div>
-
-        <p className="helper-text">Only the newest completed report can be downloaded. Older reports become unavailable once the 10-minute retention window expires.</p>
       </section>
     </div>
   );
@@ -664,20 +658,31 @@ function DashboardPage({ apiBaseUrl, token, view = 'overview' }) {
         ) : (
           <div className="history-table">
             <div className="history-table__head">
-              <span>Job ID</span>
+              <span>Business</span>
               <span>Status</span>
               <span>Created</span>
             </div>
             {history.map((job) => (
               <div className="history-table__row" key={job.job_id}>
                 <div>
-                  <p className="history-id">{job.job_id}</p>
-                  <span className="history-subtext">Business health audit</span>
+                  <p className="history-id">{getBusinessLabel(job)}</p>
+                  <span className="history-subtext history-subtext--mono">{job.job_id || ''}</span>
                 </div>
                 <span className={`status-pill status-pill--${formatStatus(job.status)}`}>
                   {job.status}
                 </span>
-                <span className="history-date">{new Date(job.created_at).toLocaleString()}</span>
+                <div className="history-date-cell">
+                  <span className="history-date">{new Date(job.created_at).toLocaleString()}</span>
+                  {formatStatus(job.status) === 'completed' ? (
+                    job.report_available ? (
+                      <button className="history-link" type="button" onClick={() => handleDownload(job.job_id)}>
+                        Download
+                      </button>
+                    ) : (
+                      <span className="history-expired">Expired</span>
+                    )
+                  ) : null}
+                </div>
               </div>
             ))}
           </div>

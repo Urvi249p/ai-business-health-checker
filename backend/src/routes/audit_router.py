@@ -1,3 +1,4 @@
+import json
 from typing import List, Optional
 from uuid import uuid4
 from pathlib import Path
@@ -57,6 +58,17 @@ async def get_audit_history(current_user: dict = Depends(get_current_user)) -> l
     history = []
     for job in jobs:
         availability = get_report_availability(job)
+        business_profile = job.get("business_profile")
+        if isinstance(business_profile, str):
+            business_profile = json.loads(business_profile)
+        elif not isinstance(business_profile, dict):
+            business_profile = {}
+
+        business_name = business_profile.get(
+            "business_name",
+            job.get("business_description", "Unknown Business"),
+        )
+
         history.append(
             {
                 "job_id": job["id"],
@@ -67,6 +79,7 @@ async def get_audit_history(current_user: dict = Depends(get_current_user)) -> l
                 "report_available": availability["report_available"],
                 "report_expires_at": availability["report_expires_at"],
                 "report_retention_seconds": REPORT_RETENTION_SECONDS,
+                "business_name": business_name,
             }
         )
     return history

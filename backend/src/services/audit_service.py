@@ -27,7 +27,8 @@ async def run_audit_background(job_id: str, business_profile: dict) -> None:
         logger.info(f"Audit job {job_id}: crew finished, saving result")
         result_path = os.path.join(settings.TEMP_DIR, f"{job_id}.pdf")
         Path(settings.TEMP_DIR).mkdir(parents=True, exist_ok=True)
-        await asyncio.to_thread(convert_md_to_pdf, markdown_result, result_path)
+        business_name = business_profile.get("business_name", "Business") if isinstance(business_profile, dict) else "Business"
+        await asyncio.to_thread(convert_md_to_pdf, markdown_result, result_path, business_name)
 
         await complete_job(job_id, result_path)
         logger.info(f"Audit job {job_id}: completed successfully")

@@ -46,32 +46,33 @@ button, input, textarea { font: inherit; }
 .sidebar__brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding-bottom: 24px;
+  padding: 20px 16px;
+  margin-bottom: 8px;
 }
 
-.brand-mark {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  color: white;
-  font-weight: 700;
-  background: var(--primary);
-  letter-spacing: 0.02em;
+.sidebar__brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.brand-title {
-  margin: 0;
+.sidebar__brand-wordmark {
   font-family: 'Plus Jakarta Sans', sans-serif;
   font-weight: 700;
-  font-size: 16px;
+  font-size: 18px;
+  color: #111827;
 }
 
-.brand-subtitle {
-  font-size: 12px;
-  color: var(--text-secondary);
+.auditly-brand {
+  display: flex;
+  align-items: center;
+}
+
+.auditly-brand__wordmark {
+  margin-left: 10px;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-weight: 700;
+  color: #111827;
 }
 
 .sidebar__nav {
@@ -244,6 +245,29 @@ button, input, textarea { font: inherit; }
   border-color: var(--primary);
   color: var(--primary);
   transform: translateX(-1px);
+}
+ 
+.auth-card__header--brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.auth-card__brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.auth-card__wordmark {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: #111827;
 }
 
 .auth-card__header h2,
@@ -792,6 +816,72 @@ textarea {
 .history-date {
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+.history-subtext--mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.history-date-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.history-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.history-expired {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 220px;
+  padding: 24px;
+  text-align: center;
+  border: 1px dashed #d1d5db;
+  border-radius: 12px;
+  background: #fafafa;
+}
+
+.empty-state__icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #9ca3af;
+  font-size: 24px;
+}
+
+.empty-state h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--text-primary);
+}
+
+.empty-state p {
+  margin: 0;
+  max-width: 360px;
+  color: var(--text-secondary);
+  font-size: 14px;
 }
 
 .otp-inputs {
