@@ -51,38 +51,64 @@ C_PAGE_BG    = HexColor("#F8F9FC")   # page background hint
 
 
 def _clean(text: str) -> str:
-    # ── Encoding artifacts ────────────────────────────────────────────────────
-    text = text.replace("\u25a0", "-").replace("■", "-")
-    text = text.replace("\u2013", "–").replace("\u2014", "—")
-    text = text.replace("\u2022", "•").replace("\u00b7", "-")
-    text = text.replace("\u2019", "'").replace("\u201c", '"').replace("\u201d", '"')
-    text = text.replace("\u00e2\u0080\u0099", "'").replace("\u00e2\u0080\u009c", '"')
-    text = text.replace("\ufffd", "-")
+    # Step 1: Strip AI page headers FIRST
+    # Handles: "Auditly — Business Audit Report Page 2 | Confidential"
+    text = re.sub(
+        r"Auditly\s*[\u2014\-\u2013]\s*Business Audit Report\s+Page\s+\d+[^\n]*",
+        "", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"Business Audit Report\s+Page\s+\d+[^\n]*",
+        "", text, flags=re.IGNORECASE)
+    text = re.sub(r"Auditly\s+Page\s+\d+", "", text, flags=re.IGNORECASE)
 
-    # ── AI-injected HTML tags ─────────────────────────────────────────────────
-    # <br> and <br/> inside table cells → replace with newline separator
-    text = re.sub(r"\s*<br\s*/?>\s*", " | ", text, flags=re.IGNORECASE)
-    # Strip any remaining raw HTML tags except <b> </b>
-    text = re.sub(r"<(?!/?b\b)[^>]+>", "", text, flags=re.IGNORECASE)
-    # Convert raw <b> tags AI emits literally → markdown bold
-    text = re.sub(r"<b>(.*?)</b>", r"**\1**", text, flags=re.IGNORECASE | re.DOTALL)
+    # Step 2: Remove duplicate cover lines AI adds
+    text = re.sub(
+        r"^BUSINESS AUDIT\s*&\s*STRATEGY REPORT\s*$",
+        "", text, flags=re.MULTILINE | re.IGNORECASE)
+    text = re.sub(
+        r"^Business Audit\s*&\s*Strategy Report\s*$",
+        "", text, flags=re.MULTILINE)
+    text = re.sub(
+        r"^-+\s*CONFIDENTIAL\s*-+$",
+        "", text, flags=re.MULTILINE | re.IGNORECASE)
+    text = re.sub(r"^CONFIDENTIAL$", "", text, flags=re.MULTILINE)
 
-    # ── Injected page headers ─────────────────────────────────────────────────
-    text = re.sub(r"Business Audit Report\s+Page\s+\d+\s*(Confidential)?", "", text)
-    text = re.sub(r"Auditly\s+Page\s+\d+", "", text)
+    # Step 3: Currency BEFORE replacing ■ globally
+    # "■1 L", "■5K" → "₹1 L", "₹5K"
+    text = re.sub(r"■\s*(\d)", r"₹\1", text)
+    text = re.sub(r"₹\s+(\d)", r"₹\1", text)
 
-    # ── Currency symbols ──────────────────────────────────────────────────────
-    # Keep ₹ as-is for body text, replace ■ that appears before numbers (AI currency artifact)
-    text = re.sub(r"■(\d)", r"₹\1", text)
-
-    # ── Numbered list artifacts (1■■ → 1.) ───────────────────────────────────
+    # Step 4: Numbered list artifacts BEFORE global ■ replace
+    # "1■■ Starter" → "1. Starter"
     text = re.sub(r"^(\d+)■+\s*", r"\1. ", text, flags=re.MULTILINE)
 
-    # ── Dash artifacts (■ between words) ─────────────────────────────────────
+    # Step 5: Word-hyphen artifacts
+    # "five■year■old" → "five-year-old"
     text = re.sub(r"(\w)■(\w)", r"\1-\2", text)
 
-    # ── Final cleanup of remaining ■ ─────────────────────────────────────────
-    text = text.replace("■", "-")
+    # Step 6: Unicode encoding artifacts
+    text = text.replace("\u25a0", "-").replace("■", "-")
+    text = text.replace("\u2013", "\u2013").replace("\u2014", "\u2014")
+    text = text.replace("\u2022", "\u2022").replace("\u00b7", "-")
+    text = text.replace("\u2019", "'")
+    text = text.replace("\u201c", '"').replace("\u201d", '"')
+    text = text.replace("\u00e2\u0080\u0099", "'")
+    text = text.replace("\u00e2\u0080\u009c", '"')
+    text = text.replace("\ufffd", "-")
+
+    # Step 7: AI HTML tags
+    text = re.sub(r"\s*<br\s*/?>\s*", " | ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<(?!/?b\b)[^>]+>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"<b>(.*?)</b>", r"**\1**", text, flags=re.IGNORECASE | re.DOTALL)
+
+    # Step 8: Escaped asterisks \* → *
+    text = re.sub(r"\\\*", "*", text)
+
+    # Step 9: H4 headers normalize to H3
+    text = re.sub(r"^####\s+", "### ", text, flags=re.MULTILINE)
+
+    # Step 10: Excessive blank lines
+    text = re.sub(r"\n{3,}", "\n\n", text)
 
     return text
 

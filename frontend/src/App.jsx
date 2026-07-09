@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Routes, Route, Navigate, NavLink } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import AuthPage from './pages/AuthPage';
 import DashboardPage from './pages/DashboardPage';
-import AuditlyBrand from './components/AuditlyBrand';
+import Sidebar from './components/Sidebar';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
 
@@ -12,6 +12,9 @@ function App() {
     const storedUser = localStorage.getItem('user');
     return storedUser ? JSON.parse(storedUser) : null;
   });
+  const location = useLocation();
+  const navigate = useNavigate();
+  const currentView = location.pathname.slice(1) || 'overview';
 
   useEffect(() => {
     localStorage.setItem('token', token);
@@ -47,39 +50,12 @@ function App() {
     <div className={`app-shell ${token ? 'app-shell--authenticated' : ''}`}>
       {token ? (
         <>
-          <aside className="sidebar">
-            <div className="sidebar__brand">
-              <AuditlyBrand size={32} className="sidebar__brand-logo" wordmarkClassName="sidebar__brand-wordmark" />
-            </div>
-
-            <nav className="sidebar__nav" aria-label="Primary navigation">
-              <NavLink to="/overview" className={({ isActive }) => `sidebar__link ${isActive ? 'is-active' : ''}`} end>
-                <span className="sidebar__icon">⌂</span>
-                <span>Overview</span>
-              </NavLink>
-              <NavLink to="/reports" className={({ isActive }) => `sidebar__link ${isActive ? 'is-active' : ''}`}>
-                <span className="sidebar__icon">▣</span>
-                <span>Reports</span>
-              </NavLink>
-              <NavLink to="/history" className={({ isActive }) => `sidebar__link ${isActive ? 'is-active' : ''}`}>
-                <span className="sidebar__icon">◌</span>
-                <span>History</span>
-              </NavLink>
-            </nav>
-
-            <div className="sidebar__footer">
-              <div className="sidebar__profile">
-                <div className="profile-avatar">
-                  {(user?.username || 'U').slice(0, 1).toUpperCase()}
-                </div>
-                <div>
-                  <p className="profile-name">{user?.username || 'Signed in'}</p>
-                  {user?.role ? <span className="profile-role">{user.role}</span> : null}
-                </div>
-              </div>
-              <button className="sidebar__logout" onClick={handleLogout}>Log out</button>
-            </div>
-          </aside>
+          <Sidebar
+            currentView={currentView}
+            onNavigate={(view) => navigate(`/${view}`)}
+            username={user?.username}
+            onLogout={handleLogout}
+          />
 
           <div className="main-panel">
             <header className="page-header">
@@ -93,9 +69,10 @@ function App() {
               <Routes>
                 <Route path="/" element={<Navigate to="/overview" replace />} />
                 <Route path="/overview" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="overview" />} />
-                <Route path="/reports" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="reports" />} />
-                <Route path="/history" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="history" />} />
-                <Route path="*" element={<Navigate to="/overview" replace />} />
+              <Route path="/reports" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="reports" />} />
+              <Route path="/history" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="history" />} />
+              <Route path="/settings" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="settings" />} />
+              <Route path="*" element={<Navigate to="/overview" replace />} />
               </Routes>
             </main>
           </div>
