@@ -51,7 +51,46 @@ C_PAGE_BG    = HexColor("#F8F9FC")   # page background hint
 
 
 def _clean(text: str) -> str:
+<<<<<<< Updated upstream
     # ── Encoding artifacts ────────────────────────────────────────────────────
+=======
+    # Step 1: Strip AI page headers FIRST
+    # Handles: "Auditly — Business Audit Report Page 2 | Confidential"
+    text = re.sub(
+        r"Auditly\s*[\u2014\-\u2013]\s*Business Audit Report\s+Page\s+\d+[^\n]*",
+        "", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"Business Audit Report\s+Page\s+\d+[^\n]*",
+        "", text, flags=re.IGNORECASE)
+    text = re.sub(r"Auditly\s+Page\s+\d+", "", text, flags=re.IGNORECASE)
+
+    # Step 2: Remove duplicate cover lines AI adds
+    text = re.sub(
+        r"^BUSINESS AUDIT\s*&\s*STRATEGY REPORT\s*$",
+        "", text, flags=re.MULTILINE | re.IGNORECASE)
+    text = re.sub(
+        r"^Business Audit\s*&\s*Strategy Report\s*$",
+        "", text, flags=re.MULTILINE)
+    text = re.sub(
+        r"^-+\s*CONFIDENTIAL\s*-+$",
+        "", text, flags=re.MULTILINE | re.IGNORECASE)
+    text = re.sub(r"^CONFIDENTIAL$", "", text, flags=re.MULTILINE)
+
+    # Step 3: Currency BEFORE replacing ■ globally
+    # "■1 L", "■5K" → "Rs. 1 L", "Rs. 5K"
+    text = re.sub(r"■\s*(\d)", r"Rs. \1", text)
+    text = re.sub(r"₹\s*(\d)", r"Rs. \1", text)
+
+    # Step 4: Numbered list artifacts BEFORE global ■ replace
+    # "1■■ Starter" → "1. Starter"
+    text = re.sub(r"^(\d+)■+\s*", r"\1. ", text, flags=re.MULTILINE)
+
+    # Step 5: Word-hyphen artifacts
+    # "five■year■old" → "five-year-old"
+    text = re.sub(r"(\w)■(\w)", r"\1-\2", text)
+
+    # Step 6: Unicode encoding artifacts
+>>>>>>> Stashed changes
     text = text.replace("\u25a0", "-").replace("■", "-")
     text = text.replace("\u2013", "–").replace("\u2014", "—")
     text = text.replace("\u2022", "•").replace("\u00b7", "-")
@@ -343,6 +382,37 @@ def _recommendation_block(num: int, title: str, body: str, st: dict) -> list:
     return [outer, Spacer(1, 6)]
 
 
+def _finding_card(
+    finding: str,
+    evidence: str,
+    impact: str,
+    recommendation: str,
+    st: dict,
+) -> list:
+    """Render a finding card with evidence, impact, and recommendation rows."""
+    data = [
+        [Paragraph("<b>FINDING</b>", st["label"]), Paragraph(_escape(finding), st["body"])],
+        [Paragraph("<b>EVIDENCE</b>", st["label"]), Paragraph(_escape(evidence), st["body_muted"])],
+        [Paragraph("<b>BUSINESS IMPACT</b>", st["label"]), Paragraph(_escape(impact), st["body_muted"])],
+        [Paragraph("<b>RECOMMENDATION</b>", st["label"]), Paragraph(_escape(recommendation), st["body_muted"])],
+    ]
+
+    tbl = Table(data, colWidths=[110, PAGE_W - MARGIN_L - MARGIN_R - 110])
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), C_BLUE_LIGHT),
+        ("LINEBEFORE",    (0, 0), (0, -1), 3, C_BLUE),
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 10),
+        ("BOX",           (0, 0), (-1, -1), 0.5, C_BLUE_MID),
+        ("SPAN",          (0, 0), (0, 0)),
+    ]))
+
+    return [tbl, Spacer(1, 10)]
+
+
 def _footer(canvas, doc) -> None:
     canvas.saveState()
     y = 18
@@ -430,6 +500,65 @@ def _profile_table(fields: list, st: dict) -> Table:
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
         *[("BACKGROUND", (0, idx), (-1, idx), C_ROW_ALT)
           for idx in range(1, len(data), 2)],
+    ]))
+    return tbl
+
+
+def _metric_card(label: str, value: str, st: dict) -> Table:
+    """Render a compact metric card for a dashboard-style summary."""
+    card_style = ParagraphStyle(
+        "MetricValue",
+        parent=st["h2"],
+        alignment=TA_CENTER,
+        spaceAfter=6,
+    )
+    label_style = ParagraphStyle(
+        "MetricLabel",
+        parent=st["body_muted"],
+        alignment=TA_CENTER,
+        spaceAfter=0,
+    )
+
+    data = [
+        [Paragraph(_escape(str(value)), card_style)],
+        [Paragraph(_escape(str(label)), label_style)],
+    ]
+    tbl = Table(data, colWidths=[(PAGE_W - MARGIN_L - MARGIN_R) / 3])
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), C_BLUE_LIGHT),
+        ("BOX",           (0, 0), (-1, -1), 0.8, C_BLUE_MID),
+        ("TOPPADDING",    (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 10),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    return tbl
+
+
+def _metric_grid(metrics: list[tuple[str, str]], st: dict, columns: int = 3) -> Table:
+    """Arrange metric cards into a responsive grid with fixed column counts."""
+    usable = PAGE_W - MARGIN_L - MARGIN_R
+    col_w = usable / columns
+    rows = []
+
+    for idx in range(0, len(metrics), columns):
+        row_metrics = metrics[idx:idx + columns]
+        row = [
+            _metric_card(label, value, st)
+            for label, value in row_metrics
+        ]
+        if len(row) < columns:
+            row.extend(["" for _ in range(columns - len(row))])
+        rows.append(row)
+
+    tbl = Table(rows, colWidths=[col_w] * columns)
+    tbl.setStyle(TableStyle([
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+        ("TOPPADDING",    (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
     ]))
     return tbl
 

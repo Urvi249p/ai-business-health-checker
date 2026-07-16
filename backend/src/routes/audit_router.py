@@ -7,8 +7,19 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from src.config.database import create_job, get_job, get_jobs_by_user
+from src.config.database import (
+    create_job,
+    get_job,
+    get_jobs_by_user,
+    get_interview_qa,
+    save_interview_qa,
+    update_job_status,
+)
 from src.services.audit_service import run_audit_background
+from src.services.interview_service import (
+    build_enriched_profile,
+    generate_interview_questions,
+)
 from src.utils.auth_deps import get_current_user
 from src.utils.report_access import REPORT_RETENTION_SECONDS, get_report_availability
 
@@ -31,23 +42,101 @@ class AuditRequest(BaseModel):
     additional_notes: Optional[str] = Field(None, description="Any extra context")
 
 
+class InterviewAnswersRequest(BaseModel):
+    answers: List[str] = Field(
+        ...,
+        description="Answers to the interview questions in order",
+    )
+
+
+class InterviewQuestionsResponse(BaseModel):
+    job_id: str
+    questions: List[str]
+    business_name: str
+
+
 @router.post("/audit")
 async def create_audit_job(
     payload: AuditRequest,
-    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Queue a new audit job and return the job ID immediately."""
+    """
+    Create a new audit job, save the business profile,
+    and generate personalized interview questions.
+    The audit pipeline starts only after the user
+    answers the interview questions.
+    """
     job_id = str(uuid4())
     business_profile = payload.model_dump()
 
     await create_job(job_id, business_profile, user_id=current_user["id"])
-    background_tasks.add_task(run_audit_background, job_id, business_profile)
+    await update_job_status(job_id, "interview_pending")
+
+    questions = await generate_interview_questions(business_profile)
+    await save_interview_qa(job_id, [{"question": question, "answer": ""} for question in questions])
+
+    return {
+        "job_id": job_id,
+        "status": "interview_pending",
+        "business_name": business_profile.get("business_name"),
+        "questions": questions,
+        "message": "Answer these questions to start your audit",
+    }
+
+
+@router.post("/audit/{job_id}/interview/complete")
+async def complete_interview(
+    job_id: str,
+    payload: InterviewAnswersRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """
+    Submit answers to interview questions.
+    Enriches the business profile with Q&A context
+    and starts the audit pipeline.
+    """
+    job = await get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.get("user_id") != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    if job["status"] != "interview_pending":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job is not awaiting interview. Status: {job['status']}",
+        )
+
+    business_profile = job.get("business_profile")
+    if isinstance(business_profile, str):
+        business_profile = json.loads(business_profile)
+    elif not isinstance(business_profile, dict):
+        business_profile = {}
+
+    stored_qa = await get_interview_qa(job_id)
+    questions = [item["question"] for item in stored_qa] if stored_qa else []
+
+    qa_pairs = [
+        {
+            "question": questions[i] if i < len(questions) else f"Question {i+1}",
+            "answer": answer.strip(),
+        }
+        for i, answer in enumerate(payload.answers)
+        if answer.strip()
+    ]
+
+    await save_interview_qa(job_id, qa_pairs)
+
+    enriched_profile = await build_enriched_profile(business_profile, qa_pairs)
+
+    background_tasks.add_task(run_audit_background, job_id, enriched_profile)
 
     return {
         "job_id": job_id,
         "status": "queued",
-        "message": "Audit job queued successfully",
+        "message": "Interview complete. Audit pipeline started.",
     }
 
 
@@ -98,7 +187,7 @@ async def get_audit_status(job_id: str, current_user: dict = Depends(get_current
     return {
         "job_id": job["id"],
         "status": job["status"],
-        "current_agent": job.get("current_agent", 0),
+        "current_agent": job.get("current_agent"),
         "created_at": job["created_at"],
         "updated_at": job["updated_at"],
         "error": job.get("error"),

@@ -3,16 +3,9 @@
 from crewai import Task
 
 
-def get_tasks(agents: list, business_profile: dict) -> list[Task]:
-    """Return the five ordered tasks for the audit crew.
-    
-    Args:
-        agents: List of 5 agents [Business Analyst, SWOT Analyst, 
-                Pricing Consultant, Growth Consultant, Report Writer]
-        business_profile: Structured dict with business information
-    """
+def get_tasks(agents: list, business_profile: dict, enriched_context: str = None) -> list[Task]:
+    """Return the five ordered tasks for the audit crew with rich interview context."""
 
-    # Format structured profile into a readable block for prompts
     profile_text = f"""
     Business Name:          {business_profile.get('business_name', 'N/A')}
     Business Type:          {business_profile.get('business_type', 'N/A')}
@@ -29,12 +22,13 @@ def get_tasks(agents: list, business_profile: dict) -> list[Task]:
     Additional Notes:       {business_profile.get('additional_notes', 'N/A')}
     """
 
+    context_block = f"\n\n{enriched_context}" if enriched_context else ""
+
     task1 = Task(
         agent=agents[0],
         description=f"""
-            Analyze the following structured business profile and produce a comprehensive 
-            business analysis. You have real, factual information — do not make assumptions 
-            or invent data not present in the profile.
+            Analyze the following structured business profile and owner interview responses.
+            {context_block}
 
             BUSINESS PROFILE:
             {profile_text}
@@ -49,10 +43,11 @@ def get_tasks(agents: list, business_profile: dict) -> list[Task]:
             - Key operational strengths based on the facts provided
             - Current challenges the owner has identified
             - Alignment between stated goals and current operations
+            - Any interview insights that clearly add depth to the business picture
         """,
         expected_output=(
             "A structured business analysis covering all dimensions in clear sections, "
-            "grounded entirely in the provided profile data."
+            "grounded entirely in the provided profile data and interview context."
         ),
     )
 
@@ -61,6 +56,7 @@ def get_tasks(agents: list, business_profile: dict) -> list[Task]:
         description=f"""
             Using the business analysis from Task 1 and the original business profile below,
             produce a comprehensive SWOT analysis grounded in facts — not generic statements.
+            {context_block}
 
             BUSINESS PROFILE:
             {profile_text}
@@ -69,16 +65,14 @@ def get_tasks(agents: list, business_profile: dict) -> list[Task]:
 
             - Strengths: internal advantages this business demonstrably has
               (e.g. if team_size is small and years_in_business is high → lean, experienced operation)
-            
             - Weaknesses: internal limitations evident from the profile
               (e.g. if customer_sources is only walk-ins → limited digital reach)
-            
             - Opportunities: external trends or gaps this business can realistically exploit
               given its location, business model, and goals
-            
             - Threats: external risks relevant to this business type, location, and market
 
             Every point must be specific to THIS business. No generic filler.
+            Use interview details where they materially strengthen the assessment.
         """,
         expected_output=(
             "A detailed SWOT analysis with at least 4 specific, evidence-based points "
@@ -90,16 +84,17 @@ def get_tasks(agents: list, business_profile: dict) -> list[Task]:
     task3 = Task(
         agent=agents[2],
         description=f"""
-            Based on the business profile and SWOT analysis, recommend the optimal 
-            pricing strategy for this business.
+            Based on the business profile, SWOT analysis, and owner interview context,
+            recommend the optimal pricing strategy for this business.
+            {context_block}
 
             BUSINESS PROFILE:
             {profile_text}
 
             Your recommendations must account for:
-            1. The business model ({business_profile.get('business_model', 'N/A')}) 
+            1. The business model ({business_profile.get('business_model', 'N/A')})
                and customer type ({business_profile.get('customer_type', 'N/A')})
-            2. The monthly revenue range ({business_profile.get('monthly_revenue_range', 'N/A')}) 
+            2. The monthly revenue range ({business_profile.get('monthly_revenue_range', 'N/A')})
                to ensure pricing is realistic
             3. The identified challenges: {', '.join(business_profile.get('biggest_challenges', []))}
             4. The stated goals: {', '.join(business_profile.get('goals', []))}
@@ -109,6 +104,7 @@ def get_tasks(agents: list, business_profile: dict) -> list[Task]:
             - Specific price points or ranges where possible
             - Quick pricing wins the business can implement immediately
             - Pricing mistakes to avoid given their situation
+            - How the interview context changes or supports the pricing recommendation
         """,
         expected_output=(
             "A pricing strategy recommendation with model choice, suggested price points, "
@@ -122,6 +118,7 @@ def get_tasks(agents: list, business_profile: dict) -> list[Task]:
         description=f"""
             Create a practical, realistic 90-day growth action plan for this business.
             Every action must be grounded in the actual business situation — not generic advice.
+            {context_block}
 
             BUSINESS PROFILE:
             {profile_text}
@@ -143,6 +140,7 @@ def get_tasks(agents: list, business_profile: dict) -> list[Task]:
             - Expected outcome by end of phase
 
             Be realistic given team size of {business_profile.get('team_size', 'N/A')} people.
+            Make the plan reflect real interview details whenever available.
         """,
         expected_output=(
             "A 90-day growth action plan with specific actions, owners, metrics, "
@@ -153,14 +151,15 @@ def get_tasks(agents: list, business_profile: dict) -> list[Task]:
 
     task5 = Task(
         agent=agents[4],
-        description="""
+        description=f"""
             Assemble a complete professional business audit report in Markdown format
             using the outputs from all previous tasks.
+            {context_block}
 
             Use this exact structure:
 
             # Business Audit & Strategy Report
-            ### {Business Name} — Confidential
+            ### {{Business Name}} — Confidential
 
             ## Executive Summary
             (3-4 sentence overview of the business and the most important findings)
@@ -186,6 +185,8 @@ def get_tasks(agents: list, business_profile: dict) -> list[Task]:
             Make it professional, well-formatted, and ready to present to a business owner.
             Use proper Markdown: ## headers, **bold** for emphasis, bullet points and tables.
             The report should feel like it was written by a senior consultant, not generated by AI.
+            IMPORTANT: Incorporate specific insights from the owner interview provided in the context.
+            Make recommendations feel personalized and grounded in real owner feedback.
         """,
         expected_output=(
             "A complete, professional business audit report in Markdown format "

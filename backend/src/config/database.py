@@ -133,11 +133,12 @@ async def init_db() -> None:
         # Safe migrations — add columns if they don't exist yet
         # (handles existing DBs that were created before these columns)
         for column_sql in [
-            "ALTER TABLE audit_jobs ADD COLUMN IF NOT EXISTS current_agent INTEGER DEFAULT 0",
+            "ALTER TABLE audit_jobs ADD COLUMN IF NOT EXISTS current_agent TEXT",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_2fa_enabled BOOLEAN NOT NULL DEFAULT FALSE",
             "ALTER TABLE audit_jobs ADD COLUMN IF NOT EXISTS user_id TEXT",
             "ALTER TABLE audit_jobs ADD COLUMN IF NOT EXISTS business_profile JSONB",
+            "ALTER TABLE audit_jobs ADD COLUMN IF NOT EXISTS interview_qa JSONB DEFAULT '[]'",
         ]:
             await conn.execute(column_sql)
 
@@ -291,11 +292,40 @@ async def fail_job(job_id: str, error: str) -> None:
             error, _now(), job_id,
         )
 
-async def update_job_agent(job_id: str, agent_index: int) -> None:
-    """Update which agent (0-5) is currently running for a job."""
+async def update_job_agent(job_id: str, agent_name: str) -> None:
+    """Update which agent is currently working on this job."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute(
             "UPDATE audit_jobs SET current_agent = $1, updated_at = $2 WHERE id = $3",
-            agent_index, _now(), job_id,
+            agent_name, _now(), job_id,
         )
+
+
+async def save_interview_qa(job_id: str, qa_pairs: list[dict]) -> None:
+    """Save interview Q&A pairs to the job record."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE audit_jobs
+            SET interview_qa = $1, updated_at = $2
+            WHERE id = $3
+            """,
+            json.dumps(qa_pairs), _now(), job_id,
+        )
+
+
+async def get_interview_qa(job_id: str) -> list[dict]:
+    """Return interview Q&A pairs for a job."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT interview_qa FROM audit_jobs WHERE id = $1", job_id
+        )
+        if not row or not row["interview_qa"]:
+            return []
+        qa = row["interview_qa"]
+        if isinstance(qa, str):
+            return json.loads(qa)
+        return list(qa) if qa else []
