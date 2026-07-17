@@ -17,7 +17,6 @@ from src.config.database import (
 )
 from src.services.audit_service import run_audit_background
 from src.services.interview_service import (
-    build_enriched_profile,
     generate_interview_questions,
 )
 from src.utils.auth_deps import get_current_user
@@ -129,9 +128,11 @@ async def complete_interview(
 
     await save_interview_qa(job_id, qa_pairs)
 
-    enriched_profile = await build_enriched_profile(business_profile, qa_pairs)
-
-    background_tasks.add_task(run_audit_background, job_id, enriched_profile)
+    # Pass original profile — audit_service fetches 
+    # Q&A from DB and builds enriched_context itself
+    background_tasks.add_task(
+        run_audit_background, job_id, business_profile
+    )
 
     return {
         "job_id": job_id,

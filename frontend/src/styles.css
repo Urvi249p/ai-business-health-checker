@@ -924,6 +924,134 @@ textarea {
   font-size: 12px;
 }
 
+.interview-header {
+  margin-bottom: 20px;
+}
+
+.interview-progress {
+  margin-bottom: 20px;
+}
+
+.interview-progress__label {
+  font-size: 12px;
+  color: #6B7280;
+  font-weight: 500;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.interview-progress__bar {
+  height: 4px;
+  background: #E5E7EB;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.interview-progress__fill {
+  height: 100%;
+  background: #2563EB;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.interview-question-card {
+  background: #EFF6FF;
+  border: 1px solid #DBEAFE;
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+.interview-question__text {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1E293B;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.interview-answer {
+  margin-bottom: 16px;
+}
+
+.interview-answer__input {
+  width: 100%;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 14px;
+  color: #111827;
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.interview-answer__input:focus {
+  outline: none;
+  border-color: #2563EB;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.interview-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.interview-skip {
+  text-align: center;
+}
+
+.interview-skip__btn {
+  background: none;
+  border: none;
+  color: #9CA3AF;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 4px;
+}
+
+.interview-skip__btn:hover {
+  color: #6B7280;
+}
+
+.pipeline-complete {
+  margin-top: 20px;
+  padding: 16px;
+  background: #ECFDF5;
+  border: 1px solid #A7F3D0;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.pipeline-complete__text {
+  font-size: 14px;
+  font-weight: 600;
+  color: #065F46;
+  margin: 0;
+}
+
+.pipeline-failed {
+  margin-top: 20px;
+  padding: 16px;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: 10px;
+}
+
+.pipeline-failed__text {
+  font-size: 14px;
+  color: #991B1B;
+  margin: 0 0 12px 0;
+}
+
 .error-text {
   color: var(--error);
   margin: 0;
