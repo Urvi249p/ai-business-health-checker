@@ -185,6 +185,16 @@ async def get_audit_status(job_id: str, current_user: dict = Depends(get_current
     if job.get("user_id") and job["user_id"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="Not authorized to view this job")
 
+    # Include questions when interview is pending
+    questions = []
+    if job["status"] == "interview_pending":
+        stored_qa = await get_interview_qa(job_id)
+        questions = [
+            item["question"] 
+            for item in stored_qa 
+            if item.get("question")
+        ]
+
     return {
         "job_id": job["id"],
         "status": job["status"],
@@ -192,6 +202,7 @@ async def get_audit_status(job_id: str, current_user: dict = Depends(get_current
         "created_at": job["created_at"],
         "updated_at": job["updated_at"],
         "error": job.get("error"),
+        "questions": questions,
     }
 
 

@@ -54,13 +54,13 @@ function App() {
             </div>
 
             <nav className="sidebar__nav" aria-label="Primary navigation">
-              <NavLink to="/audit" className={({ isActive }) => `sidebar__link ${isActive ? 'is-active' : ''}`}>
-                <span className="sidebar__icon">✦</span>
-                <span>New Audit</span>
-              </NavLink>
               <NavLink to="/overview" className={({ isActive }) => `sidebar__link ${isActive ? 'is-active' : ''}`} end>
                 <span className="sidebar__icon">⌂</span>
                 <span>Overview</span>
+              </NavLink>
+              <NavLink to="/audit" className={({ isActive }) => `sidebar__link ${isActive ? 'is-active' : ''}`}>
+                <span className="sidebar__icon">✦</span>
+                <span>New Audit</span>
               </NavLink>
               <NavLink to="/reports" className={({ isActive }) => `sidebar__link ${isActive ? 'is-active' : ''}`}>
                 <span className="sidebar__icon">▣</span>

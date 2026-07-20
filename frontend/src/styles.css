@@ -1275,3 +1275,29 @@ textarea {
     align-items: flex-start;
   }
 }
+
+.history-link--resume {
+  color: #F59E0B;
+  font-weight: 600;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.history-link--resume:hover {
+  color: #D97706;
+}
+
+.status-pill--interview {
+  background: #FFFBEB;
+  color: #B45309;
+  border: 1px solid #FDE68A;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
