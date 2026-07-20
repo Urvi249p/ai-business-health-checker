@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Routes, Route, Navigate, NavLink } from 'react-router-dom';
+import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom';
 import AuthPage from './pages/AuthPage';
 import DashboardPage from './pages/DashboardPage';
 import AuditlyBrand from './components/AuditlyBrand';
@@ -7,6 +7,7 @@ import AuditlyBrand from './components/AuditlyBrand';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
 
 function App() {
+  const location = useLocation();
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [user, setUser] = useState(() => {
     const storedUser = localStorage.getItem('user');
@@ -53,6 +54,10 @@ function App() {
             </div>
 
             <nav className="sidebar__nav" aria-label="Primary navigation">
+              <NavLink to="/audit" className={({ isActive }) => `sidebar__link ${isActive ? 'is-active' : ''}`}>
+                <span className="sidebar__icon">✦</span>
+                <span>New Audit</span>
+              </NavLink>
               <NavLink to="/overview" className={({ isActive }) => `sidebar__link ${isActive ? 'is-active' : ''}`} end>
                 <span className="sidebar__icon">⌂</span>
                 <span>Overview</span>
@@ -85,14 +90,23 @@ function App() {
             <header className="page-header">
               <div>
                 <p className="eyebrow">AUDITLY DASHBOARD</p>
-                <h1>Business health at a glance</h1>
+                <h1>
+                  {location.pathname === '/audit'
+                    ? 'Start a new audit'
+                    : location.pathname === '/reports'
+                      ? 'Your reports'
+                      : location.pathname === '/history'
+                        ? 'Audit history'
+                        : 'Business health at a glance'}
+                </h1>
               </div>
             </header>
 
             <main className="page-content">
               <Routes>
                 <Route path="/" element={<Navigate to="/overview" replace />} />
-                <Route path="/overview" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="overview" />} />
+                <Route path="/overview" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="home" />} />
+                <Route path="/audit" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="overview" />} />
                 <Route path="/reports" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="reports" />} />
                 <Route path="/history" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="history" />} />
                 <Route path="*" element={<Navigate to="/overview" replace />} />
