@@ -14,6 +14,8 @@ from src.config.database import (
     get_interview_qa,
     save_interview_qa,
     update_job_status,
+    delete_job,
+    get_job_parent,
 )
 from src.services.audit_service import run_audit_background
 from src.services.interview_service import (
@@ -39,6 +41,7 @@ class AuditRequest(BaseModel):
     biggest_challenges: List[str] = Field(default=[], description="Top business challenges")
     goals: List[str] = Field(default=[], description="Business goals")
     additional_notes: Optional[str] = Field(None, description="Any extra context")
+    parent_job_id: Optional[str] = Field(None, description="ID of the failed job being retried")
 
 
 class InterviewAnswersRequest(BaseModel):
@@ -68,7 +71,12 @@ async def create_audit_job(
     job_id = str(uuid4())
     business_profile = payload.model_dump()
 
-    await create_job(job_id, business_profile, user_id=current_user["id"])
+    await create_job(
+        job_id,
+        business_profile,
+        user_id=current_user["id"],
+        parent_job_id=payload.parent_job_id or None,
+    )
     await update_job_status(job_id, "interview_pending")
 
     questions = await generate_interview_questions(business_profile)
@@ -203,6 +211,48 @@ async def get_audit_status(job_id: str, current_user: dict = Depends(get_current
         "updated_at": job["updated_at"],
         "error": job.get("error"),
         "questions": questions,
+    }
+
+
+@router.get("/audit/{job_id}/detail")
+async def get_audit_detail(
+    job_id: str, 
+    current_user: dict = Depends(get_current_user)
+) -> dict:
+    """
+    Return full job details including business_profile
+    and interview_qa. Used for retry functionality.
+    """
+    job = await get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.get("user_id") and job["user_id"] != current_user["id"]:
+        raise HTTPException(
+            status_code=403, detail="Not authorized to view this job"
+        )
+
+    # Parse business_profile from JSONB
+    business_profile = job.get("business_profile")
+    if isinstance(business_profile, str):
+        business_profile = json.loads(business_profile)
+    elif not isinstance(business_profile, dict):
+        business_profile = {}
+
+    # Parse interview Q&A
+    stored_qa = await get_interview_qa(job_id)
+    previous_answers = [
+        item.get("answer", "")
+        for item in stored_qa
+        if item.get("answer", "").strip()
+    ]
+
+    return {
+        "job_id": job["id"],
+        "status": job["status"],
+        "business_profile": business_profile,
+        "previous_answers": previous_answers,
+        "created_at": job["created_at"],
     }
 
 

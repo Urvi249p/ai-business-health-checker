@@ -16,8 +16,83 @@ function AuditPage({
   pipelineStatus, activeAgentIndex, failedAgentIndex,
   updateField, toggleTagSelection,
   handleNext, handleBack, handleSubmit,
-  handleAnswerNext, handleAnswerBack, handleInterviewComplete
+  handleAnswerNext, handleAnswerBack, handleInterviewComplete,
+  retryProfile, retryLoading, handleRetrySubmit,
 }) {
+
+  const renderRetryConfirm = () => {
+    const profile = retryProfile || {};
+    const fields = [
+      { label: 'Business Name', value: profile.business_name },
+      { label: 'Business Type', value: profile.business_type },
+      { label: 'Location', value: profile.location },
+      { label: 'Years in Business', value: profile.years_in_business },
+      { label: 'Team Size', value: profile.team_size },
+      { label: 'Business Model', value: profile.business_model },
+      { label: 'Customer Type', value: profile.customer_type },
+      { label: 'Monthly Revenue', value: profile.monthly_revenue_range },
+      { label: 'Customer Sources', value: (profile.customer_sources || []).join(', ') },
+      { label: 'Challenges', value: (profile.biggest_challenges || []).join(', ') },
+      { label: 'Goals', value: (profile.goals || []).join(', ') },
+    ].filter((f) => f.value);
+
+    return (
+      <div className="dashboard-grid">
+        <section className="card card--wide">
+          <div className="card__header">
+            <div>
+              <p className="eyebrow">RETRY AUDIT</p>
+              <h3>Review your business profile</h3>
+            </div>
+          </div>
+
+          <p className="helper-text">
+            We found your previous business profile. 
+            Review the details below and click 
+            "Start Audit" to generate a new report 
+            with fresh AI analysis.
+          </p>
+
+          <div className="retry-profile">
+            {fields.map((field) => (
+              <div className="retry-profile__row" key={field.label}>
+                <span className="retry-profile__label">
+                  {field.label}
+                </span>
+                <span className="retry-profile__value">
+                  {String(field.value)}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {error ? (
+            <p className="error-text" style={{ marginTop: 12 }}>
+              {error}
+            </p>
+          ) : null}
+
+          <div className="retry-actions">
+            <button
+              className="btn btn--secondary"
+              type="button"
+              onClick={() => window.location.assign('/history')}
+            >
+              ← Back to History
+            </button>
+            <button
+              className="btn btn--primary"
+              type="button"
+              onClick={handleRetrySubmit}
+              disabled={loading || retryLoading}
+            >
+              {loading ? 'Starting...' : 'Start Audit with This Profile →'}
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  };
 
   const renderInterview = () => {
     const question = interviewQuestions[currentQuestionIndex];
@@ -206,6 +281,10 @@ function AuditPage({
       </section>
     </div>
   );
+
+  if (interviewStep === 'retry_confirm') {
+    return renderRetryConfirm();
+  }
 
   if (interviewStep === 'interview') {
     return renderInterview();

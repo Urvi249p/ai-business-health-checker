@@ -7,6 +7,8 @@ from src.config.database import (
     complete_job, fail_job,
     update_job_agent, update_job_status,
     get_interview_qa,
+    delete_job,
+    get_job_parent,
 )
 from src.config.settings import settings
 from src.utils.logger import logger
@@ -111,9 +113,29 @@ async def run_audit_background(
             f"Audit job {job_id}: completed successfully"
         )
 
+        # If this was a retry, delete the original failed job
+        parent_id = await get_job_parent(job_id)
+        if parent_id:
+            await delete_job(parent_id)
+            logger.info(
+                f"Audit job {job_id}: deleted parent failed "
+                f"job {parent_id} after successful retry"
+            )
+
     except Exception as exc:
         error_message = str(exc)
         logger.error(
             f"Audit job {job_id} failed: {error_message}"
         )
-        await fail_job(job_id, error_message)
+
+        # If this was a retry job that failed, delete it
+        # so the original failed job stays with its Retry button
+        parent_id = await get_job_parent(job_id)
+        if parent_id:
+            await delete_job(job_id)
+            logger.info(
+                f"Audit job {job_id}: retry failed, deleted "
+                f"retry job to restore original {parent_id}"
+            )
+        else:
+            await fail_job(job_id, error_message)

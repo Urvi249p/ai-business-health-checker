@@ -139,6 +139,7 @@ async def init_db() -> None:
             "ALTER TABLE audit_jobs ADD COLUMN IF NOT EXISTS user_id TEXT",
             "ALTER TABLE audit_jobs ADD COLUMN IF NOT EXISTS business_profile JSONB",
             "ALTER TABLE audit_jobs ADD COLUMN IF NOT EXISTS interview_qa JSONB DEFAULT '[]'",
+            "ALTER TABLE audit_jobs ADD COLUMN IF NOT EXISTS parent_job_id TEXT",
         ]:
             await conn.execute(column_sql)
 
@@ -223,13 +224,20 @@ async def disable_user_2fa(user_id: str) -> None:
 
 # ── Audit job functions ───────────────────────────────────────────────────────
 
-async def create_job(job_id: str, business_profile: dict, user_id: str = None) -> None:
+async def create_job(
+    job_id: str,
+    business_profile: dict,
+    user_id: str = None,
+    parent_job_id: str = None,
+) -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO audit_jobs (id, status, business_description, business_profile, created_at, updated_at, user_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO audit_jobs 
+            (id, status, business_description, business_profile, 
+             created_at, updated_at, user_id, parent_job_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             """,
             job_id,
             "queued",
@@ -238,6 +246,7 @@ async def create_job(job_id: str, business_profile: dict, user_id: str = None) -
             _now(),
             _now(),
             user_id,
+            parent_job_id,
         )
 
 
@@ -329,3 +338,26 @@ async def get_interview_qa(job_id: str) -> list[dict]:
         if isinstance(qa, str):
             return json.loads(qa)
         return list(qa) if qa else []
+
+
+async def delete_job(job_id: str) -> None:
+    """Delete a job record from the database."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM audit_jobs WHERE id = $1",
+            job_id,
+        )
+
+
+async def get_job_parent(job_id: str) -> str | None:
+    """Return the parent_job_id for a given job if it exists."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT parent_job_id FROM audit_jobs WHERE id = $1",
+            job_id,
+        )
+        if not row:
+            return None
+        return row["parent_job_id"]

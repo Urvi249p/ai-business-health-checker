@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import HomePage from './HomePage';
 import AuditPage from './AuditPage';
 import ReportsPage from './ReportsPage';
@@ -11,6 +12,7 @@ import {
 } from '../constants/auditOptions';
 
 function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
+  const navigate = useNavigate();
 
   // ── Form state ──────────────────────────────────────
   const [formData, setFormData] = useState(initialFormState);
@@ -38,6 +40,9 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
   const [currentAnswer, setCurrentAnswer] = useState('');
   const [interviewLoading, setInterviewLoading] = useState(false);
   const [interviewError, setInterviewError] = useState('');
+  const [retryProfile, setRetryProfile] = useState(null);
+  const [retryLoading, setRetryLoading] = useState(false);
+  const [retryParentJobId, setRetryParentJobId] = useState('');
 
   // ── Load history ────────────────────────────────────
   const loadHistory = async () => {
@@ -317,10 +322,116 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
         business_name: businessName || 'Your Business',
       }));
 
-      window.location.assign('/audit');
+      navigate('/audit');
 
     } catch (err) {
       setError(err.message || 'Unable to resume audit');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRetry = async (jobId) => {
+    setError('');
+    setRetryLoading(true);
+    try {
+      // Fetch full job details including business_profile
+      const response = await fetch(
+        `${apiBaseUrl}/audit/${jobId}/detail`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(data.detail || 'Unable to load audit details');
+
+      const profile = data.business_profile || {};
+
+      // Store the profile for retry confirmation screen
+      setRetryProfile(profile);
+      setRetryParentJobId(jobId);
+
+      // Pre-fill formData with the original profile
+      setFormData({
+        business_name: profile.business_name || '',
+        business_type: profile.business_type || '',
+        location: profile.location || '',
+        years_in_business: profile.years_in_business || '',
+        team_size: profile.team_size || '',
+        business_model: profile.business_model || '',
+        customer_type: profile.customer_type || '',
+        monthly_revenue_range: profile.monthly_revenue_range || '',
+        customer_sources: profile.customer_sources || [],
+        current_marketing_channels: profile.current_marketing_channels || [],
+        biggest_challenges: profile.biggest_challenges || [],
+        goals: profile.goals || [],
+        additional_notes: profile.additional_notes || '',
+      });
+
+      // Reset state
+      setCurrentStep(1);
+      setActiveJobId('');
+      setPipelineStatus('queued');
+      setActiveAgentIndex(-1);
+      setFailedAgentIndex(-1);
+      setInterviewStep('retry_confirm');
+
+      navigate('/audit');
+
+    } catch (err) {
+      setError(err.message || 'Unable to load audit for retry');
+    } finally {
+      setRetryLoading(false);
+    }
+  };
+
+  const handleRetrySubmit = async () => {
+    setLoading(true);
+    setError('');
+    setMessage('');
+    try {
+      const payload = {
+        business_name: formData.business_name.trim(),
+        business_type: formData.business_type.trim(),
+        location: formData.location || null,
+        years_in_business: formData.years_in_business
+          ? Number(formData.years_in_business) : null,
+        team_size: formData.team_size
+          ? Number(formData.team_size) : null,
+        business_model: formData.business_model || null,
+        customer_type: formData.customer_type || null,
+        monthly_revenue_range: formData.monthly_revenue_range || null,
+        customer_sources: formData.customer_sources || [],
+        current_marketing_channels: formData.current_marketing_channels || [],
+        biggest_challenges: formData.biggest_challenges || [],
+        goals: formData.goals || [],
+        additional_notes: formData.additional_notes || null,
+        parent_job_id: retryParentJobId || null,
+      };
+
+      const response = await fetch(`${apiBaseUrl}/audit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(data.detail || 'Unable to start audit');
+
+      setActiveJobId(data.job_id);
+      setInterviewQuestions(data.questions || []);
+      setInterviewAnswers(
+        new Array(data.questions?.length || 0).fill('')
+      );
+      setCurrentQuestionIndex(0);
+      setCurrentAnswer('');
+      setRetryProfile(null);
+      setInterviewStep('interview');
+
+    } catch (err) {
+      setError(err.message || 'Unable to start audit');
     } finally {
       setLoading(false);
     }
@@ -333,6 +444,7 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
     getBusinessLabel,
     formatStatus,
     handleResume,
+    handleRetry,
   };
 
   const auditProps = {
@@ -347,6 +459,7 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
     agentSteps,
     businessModelOptions, customerTypeOptions, revenueOptions,
     tagOptions, challengeOptions, goalOptions,
+    retryProfile, retryLoading, handleRetrySubmit,
   };
 
   // ── View routing ────────────────────────────────────

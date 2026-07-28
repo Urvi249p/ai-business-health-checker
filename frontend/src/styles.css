@@ -1291,6 +1291,67 @@ textarea {
   color: #D97706;
 }
 
+.history-link--retry {
+  color: #E11D48;
+  font-weight: 600;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.history-link--retry:hover {
+  color: #BE123C;
+}
+
+.retry-profile {
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 16px 0;
+}
+
+.retry-profile__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #F1F5F9;
+}
+
+.retry-profile__row:last-child {
+  border-bottom: none;
+}
+
+.retry-profile__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748B;
+  min-width: 140px;
+  padding-top: 1px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.retry-profile__value {
+  font-size: 13px;
+  color: #1E293B;
+  flex: 1;
+  line-height: 1.5;
+}
+
+.retry-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #E2E8F0;
+}
+
 .status-pill--interview {
   background: #FFFBEB;
   color: #B45309;

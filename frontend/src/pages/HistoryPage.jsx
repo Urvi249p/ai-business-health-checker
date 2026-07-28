@@ -1,4 +1,4 @@
-function HistoryPage({ history, handleDownload, downloadingJobId, getBusinessLabel, formatStatus, handleResume }) {
+function HistoryPage({ history, handleDownload, downloadingJobId, getBusinessLabel, formatStatus, handleResume, handleRetry }) {
   return (
     <div className="dashboard-grid">
       <section className="card card--wide">
@@ -50,6 +50,17 @@ function HistoryPage({ history, handleDownload, downloadingJobId, getBusinessLab
                       )}
                     >
                       Resume Interview →
+                    </button>
+                  ) : formatStatus(job.status) === 'failed' ? (
+                    <button
+                      className="history-link history-link--retry"
+                      type="button"
+                      onClick={() => handleRetry(
+                        job.job_id,
+                        job.business_name || job.business_description
+                      )}
+                    >
+                      Retry Audit →
                     </button>
                   ) : formatStatus(job.status) === 'completed' ? (
                     job.report_available ? (
