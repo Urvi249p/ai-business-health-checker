@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom';
 import AuthPage from './pages/AuthPage';
 import DashboardPage from './pages/DashboardPage';
+import SettingsPage from './pages/SettingsPage';
 import AuditlyBrand from './components/AuditlyBrand';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
@@ -70,6 +71,12 @@ function App() {
                 <span className="sidebar__icon">◌</span>
                 <span>History</span>
               </NavLink>
+              <NavLink to="/settings" 
+                className={({ isActive }) => 
+                  `sidebar__link ${isActive ? 'is-active' : ''}`}>
+                <span className="sidebar__icon">⚙</span>
+                <span>Settings</span>
+              </NavLink>
             </nav>
 
             <div className="sidebar__footer">
@@ -97,7 +104,9 @@ function App() {
                       ? 'Your reports'
                       : location.pathname === '/history'
                         ? 'Audit history'
-                        : 'Business health at a glance'}
+                        : location.pathname === '/settings'
+                          ? 'Account settings'
+                          : 'Business health at a glance'}
                 </h1>
               </div>
             </header>
@@ -109,6 +118,14 @@ function App() {
                 <Route path="/audit" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="overview" />} />
                 <Route path="/reports" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="reports" />} />
                 <Route path="/history" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="history" />} />
+                <Route path="/settings" element={
+                  <SettingsPage 
+                    apiBaseUrl={API_BASE_URL} 
+                    token={token} 
+                    user={user}
+                    onLogout={handleLogout}
+                  />} 
+                />
                 <Route path="*" element={<Navigate to="/overview" replace />} />
               </Routes>
             </main>

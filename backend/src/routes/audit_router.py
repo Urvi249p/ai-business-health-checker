@@ -256,6 +256,77 @@ async def get_audit_detail(
     }
 
 
+@router.post("/audit/retry/{original_job_id}")
+async def retry_audit_job(
+    original_job_id: str,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """
+    Retry a failed audit job.
+    Reuses the original business_profile and interview
+    questions — no LLM call needed for question generation.
+    """
+    # Fetch the original failed job
+    original_job = await get_job(original_job_id)
+    if not original_job:
+        raise HTTPException(
+            status_code=404,
+            detail="Original job not found"
+        )
+
+    if original_job.get("user_id") != current_user["id"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Not authorized"
+        )
+
+    if original_job["status"] not in ["failed", "interview_pending"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job cannot be retried. Status: {original_job['status']}"
+        )
+
+    # Parse original business_profile
+    business_profile = original_job.get("business_profile")
+    if isinstance(business_profile, str):
+        business_profile = json.loads(business_profile)
+    elif not isinstance(business_profile, dict):
+        business_profile = {}
+
+    # Get existing interview questions from original job
+    stored_qa = await get_interview_qa(original_job_id)
+    existing_questions = [
+        item["question"]
+        for item in stored_qa
+        if item.get("question")
+    ]
+
+    # Create new job linked to original via parent_job_id
+    new_job_id = str(uuid4())
+    await create_job(
+        new_job_id,
+        business_profile,
+        user_id=current_user["id"],
+        parent_job_id=original_job_id,
+    )
+    await update_job_status(new_job_id, "interview_pending")
+
+    # Copy existing questions to new job — no LLM call
+    await save_interview_qa(
+        new_job_id,
+        [{"question": q, "answer": ""} for q in existing_questions]
+    )
+
+    return {
+        "job_id": new_job_id,
+        "status": "interview_pending",
+        "business_name": business_profile.get("business_name"),
+        "questions": existing_questions,
+        "message": "Retry audit started with original questions",
+    }
+
+
 @router.get("/audit/{job_id}/download")
 async def download_audit_report(job_id: str, current_user: dict = Depends(get_current_user)) -> FileResponse:
     """Return the generated audit report PDF once the job is complete."""

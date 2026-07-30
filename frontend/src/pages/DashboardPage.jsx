@@ -389,36 +389,19 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
     setError('');
     setMessage('');
     try {
-      const payload = {
-        business_name: formData.business_name.trim(),
-        business_type: formData.business_type.trim(),
-        location: formData.location || null,
-        years_in_business: formData.years_in_business
-          ? Number(formData.years_in_business) : null,
-        team_size: formData.team_size
-          ? Number(formData.team_size) : null,
-        business_model: formData.business_model || null,
-        customer_type: formData.customer_type || null,
-        monthly_revenue_range: formData.monthly_revenue_range || null,
-        customer_sources: formData.customer_sources || [],
-        current_marketing_channels: formData.current_marketing_channels || [],
-        biggest_challenges: formData.biggest_challenges || [],
-        goals: formData.goals || [],
-        additional_notes: formData.additional_notes || null,
-        parent_job_id: retryParentJobId || null,
-      };
-
-      const response = await fetch(`${apiBaseUrl}/audit`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
+      const response = await fetch(
+        `${apiBaseUrl}/audit/retry/${retryParentJobId}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
       const data = await response.json();
       if (!response.ok)
-        throw new Error(data.detail || 'Unable to start audit');
+        throw new Error(data.detail || 'Unable to retry audit');
 
       setActiveJobId(data.job_id);
       setInterviewQuestions(data.questions || []);
@@ -428,10 +411,11 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
       setCurrentQuestionIndex(0);
       setCurrentAnswer('');
       setRetryProfile(null);
+      setRetryParentJobId('');
       setInterviewStep('interview');
 
     } catch (err) {
-      setError(err.message || 'Unable to start audit');
+      setError(err.message || 'Unable to retry audit');
     } finally {
       setLoading(false);
     }

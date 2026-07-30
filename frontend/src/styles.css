@@ -1362,3 +1362,261 @@ textarea {
   font-weight: 500;
   white-space: nowrap;
 }
+
+/* ── Settings Page ── */
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 720px;
+}
+
+.settings-card {
+  width: 100%;
+}
+
+/* Profile info rows */
+.settings-info {
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.settings-info__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid #F1F5F9;
+}
+
+.settings-info__row:last-child {
+  border-bottom: none;
+}
+
+.settings-info__label {
+  font-size: 13px;
+  color: #64748B;
+  font-weight: 500;
+  min-width: 140px;
+}
+
+.settings-info__value {
+  font-size: 13px;
+  color: #1E293B;
+  font-weight: 600;
+}
+
+/* Loading skeleton */
+.settings-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.settings-loading__row {
+  height: 44px;
+  background: linear-gradient(90deg, #F1F5F9 25%, #E2E8F0 50%, #F1F5F9 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 8px;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* 2FA section */
+.settings-2fa {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-2fa__status {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.settings-2fa__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1E293B;
+  margin: 0 0 4px 0;
+}
+
+.settings-2fa__desc {
+  font-size: 13px;
+  color: #64748B;
+  margin: 0;
+}
+
+/* 2FA setup flow */
+.settings-2fa-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.settings-2fa-setup__step {
+  font-size: 11px;
+  font-weight: 700;
+  color: #2563EB;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 4px 0;
+}
+
+.settings-2fa-setup h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1E293B;
+  margin: 0 0 6px 0;
+}
+
+.settings-2fa-setup__qr {
+  display: flex;
+  justify-content: flex-start;
+  margin: 12px 0;
+}
+
+.settings-2fa-setup__qr img {
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 8px;
+  background: white;
+}
+
+.settings-2fa-setup__manual {
+  margin-top: 8px;
+}
+
+.settings-2fa-setup__secret {
+  display: block;
+  margin-top: 6px;
+  padding: 8px 12px;
+  background: #F1F5F9;
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: #1E293B;
+  letter-spacing: 2px;
+  word-break: break-all;
+}
+
+.settings-2fa-setup__actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.settings-2fa-setup__verify-section {
+  padding-top: 16px;
+  border-top: 1px solid #E2E8F0;
+}
+
+/* Alert messages */
+.settings-alert {
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 16px;
+}
+
+.settings-alert--success {
+  background: #ECFDF5;
+  color: #065F46;
+  border: 1px solid #A7F3D0;
+}
+
+.settings-alert--warning {
+  background: #FFFBEB;
+  color: #92400E;
+  border: 1px solid #FDE68A;
+}
+
+/* Danger buttons */
+.settings-btn--danger {
+  background: white;
+  color: #E11D48;
+  border: 1px solid #E11D48;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.settings-btn--danger:hover {
+  background: #FFF1F2;
+}
+
+.settings-btn--danger-filled {
+  background: #E11D48;
+  color: white;
+  border: 1px solid #E11D48;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.settings-btn--danger-filled:hover {
+  background: #BE123C;
+}
+
+/* Disable confirm modal */
+.settings-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.settings-modal {
+  background: white;
+  border-radius: 14px;
+  padding: 28px;
+  max-width: 420px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+}
+
+.settings-modal h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1E293B;
+  margin: 0 0 10px 0;
+}
+
+.settings-modal__warning {
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #E11D48;
+  margin: 14px 0;
+}
+
+.settings-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+/* Danger zone card */
+.settings-card--danger {
+  border-color: #FEE2E2;
+}
