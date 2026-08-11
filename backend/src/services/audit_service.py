@@ -106,6 +106,7 @@ async def run_audit_background(
             markdown_result,
             result_path,
             business_name,
+            business_profile=business_profile,
         )
 
         await complete_job(job_id, result_path)
