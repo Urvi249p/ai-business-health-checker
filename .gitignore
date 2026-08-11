@@ -29,3 +29,6 @@ frontend/dist/
 backend/sample_data/*.pdf
 
 backend/temp_reports/*.pdf
+
+backend/tests/test_cover_page.py
+backend/tests/test_pdf_tables.py

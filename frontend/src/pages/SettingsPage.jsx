@@ -448,27 +448,6 @@ function SettingsPage({ apiBaseUrl, token, user, onLogout }) {
           </div>
         ) : null}
       </section>
-
-      {/* ── Danger Zone ── */}
-      <section className="card settings-card settings-card--danger">
-        <div className="card__header">
-          <div>
-            <p className="eyebrow">SESSION</p>
-            <h2>Sign Out</h2>
-          </div>
-        </div>
-        <p className="helper-text" style={{ marginBottom: 16 }}>
-          Sign out of your Auditly account on this device.
-        </p>
-        <button
-          className="btn settings-btn--danger"
-          type="button"
-          onClick={onLogout}
-        >
-          Sign Out
-        </button>
-      </section>
-
     </div>
   );
 }
