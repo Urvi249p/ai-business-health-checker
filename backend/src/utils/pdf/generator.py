@@ -1,4 +1,6 @@
+import logging
 import os
+import traceback
 from reportlab.platypus.flowables import HRFlowable, PageBreak
 from reportlab.platypus import SimpleDocTemplate, Spacer, Table, TableStyle
 from reportlab.lib.pagesizes import A4
@@ -7,6 +9,9 @@ from .cover import _cover_page
 from .charts import _make_swot_radar, _make_timeline_chart
 from .parser import parse_markdown
 from .footer import _footer, _no_footer_first
+
+_PDF_LOGGER = logging.getLogger("pdf.generator")
+
 
 def convert_md_to_pdf(
     markdown_text: str,
@@ -71,6 +76,8 @@ def convert_md_to_pdf(
             onLaterPages=_later_pages)
 
     except Exception as exc:
+        _PDF_LOGGER.exception("PDF generation failed")
+        _PDF_LOGGER.error("Traceback:\n%s", traceback.format_exc())
         raise RuntimeError(f"Failed to generate PDF: {exc}") from exc
 
 __all__ = ["convert_md_to_pdf"]

@@ -40,11 +40,12 @@ def _cover_page(business_name: str, business_profile: dict, st: dict) -> list:
             ParagraphStyle("CT", fontName="Helvetica-Bold", fontSize=32,
                 leading=40, textColor=C_SLATE))],
         [Spacer(1, 8)],
-        *([Paragraph(_escape(meta_line),
-            ParagraphStyle("CM", fontName="Helvetica", fontSize=13,
-                leading=18, textColor=C_MUTED))]
-          if meta_line else []),
     ]
+
+    if meta_line:
+        cover_content.append([Paragraph(_escape(meta_line),
+            ParagraphStyle("CM", fontName="Helvetica", fontSize=13,
+                leading=18, textColor=C_MUTED))])
 
     if detail_line:
         cover_content.append([Spacer(1, 4)])

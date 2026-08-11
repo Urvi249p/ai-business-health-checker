@@ -1,27 +1,58 @@
+import logging
+
 from reportlab.platypus.flowables import HRFlowable, PageBreak
 from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import ParagraphStyle
 from .styles import C_SLATE, C_WHITE, C_EMERALD, C_SLATE_BORDER, C_ROW_ALT, C_GREEN, C_GREEN_LIGHT, C_AMBER, C_AMBER_LIGHT, C_TEAL, C_TEAL_LIGHT, C_ROSE, C_ROSE_LIGHT, C_SLATE_MID, C_SLATE_LIGHT, C_BODY, USABLE_W
 from .utils import _fmt, _escape
 
+_TABLE_LOGGER = logging.getLogger("pdf.tables")
+
+
+def _normalize_table_rows(rows: list) -> list:
+    if not rows:
+        return []
+    normalized = []
+    for row in rows:
+        if isinstance(row, (list, tuple)):
+            normalized.append(list(row))
+        else:
+            _TABLE_LOGGER.warning(
+                "Non-list row coerced in table render: %s — %r",
+                type(row).__name__,
+                row,
+            )
+            normalized.append([row])
+    return normalized
+
+
 def _build_table(rows: list, st: dict) -> Table:
+    rows = _normalize_table_rows(rows)
+    if not rows:
+        return Table([[]], colWidths=[USABLE_W])
+
     col_count = max(len(r) for r in rows)
     col_w = USABLE_W / col_count
 
     data = []
     for idx, row in enumerate(rows):
-        while len(row) < col_count:
-            row.append("")
+        if len(row) < col_count:
+            row.extend([""] * (col_count - len(row)))
+        elif len(row) > col_count:
+            row[:] = row[:col_count]
         sty = st["th"] if idx == 0 else st["td"]
         safe_row = []
         for c in row:
-            # Ensure cell is always a string
-            if isinstance(c, list):
+            if isinstance(c, (list, tuple)):
                 c = " ".join(str(x) for x in c)
+            elif isinstance(c, Paragraph):
+                _TABLE_LOGGER.warning(
+                    "Paragraph cell coerced in table render: %r",
+                    c,
+                )
+                c = str(c)
             elif not isinstance(c, str):
                 c = str(c)
-            # Truncate extremely long cells to
-            # prevent layout overflow
             if len(c) > 500:
                 c = c[:497] + "..."
             safe_row.append(Paragraph(_fmt(c), sty))
@@ -54,10 +85,11 @@ def _swot_table(rows: list, st: dict) -> list:
     to positional assignment if exactly 2 columns
     are present and we are in the SWOT section.
     """
+    rows = _normalize_table_rows(rows)
     if not rows or len(rows) < 2:
         return [_build_table(rows, st), Spacer(1, 10)]
 
-    header = [c.lower().strip() for c in rows[0]]
+    header = [str(c).lower().strip() if c is not None else "" for c in rows[0]]
     swot_keys = ["strengths", "weaknesses", 
                  "opportunities", "threats"]
 
@@ -70,7 +102,7 @@ def _swot_table(rows: list, st: dict) -> list:
     # Fallback detection: 2-column table with 
     # S/W or O/T content in first data row
     if not is_swot and len(header) == 2 and len(rows) > 1:
-        first_row_text = " ".join(rows[1]).lower()
+        first_row_text = " ".join(str(c) for c in rows[1]).lower()
         swot_content_hints = [
             "strength", "weakness", "opportunit", 
             "threat", "internal", "external",
@@ -96,7 +128,7 @@ def _swot_table(rows: list, st: dict) -> list:
                 rows[0] = ["Opportunities", "Threats"]
             else:
                 rows[0] = ["Strengths", "Weaknesses"]
-            header = [c.lower() for c in rows[0]]
+            header = [str(c).lower() for c in rows[0]]
 
     if not is_swot:
         return [_build_table(rows, st), Spacer(1, 10)]
@@ -124,10 +156,18 @@ def _swot_table(rows: list, st: dict) -> list:
     # Collect cell content from all data rows
     contents = ["" for _ in header]
     for row in rows[1:]:
-        for ci, cell in enumerate(row):
+        if not isinstance(row, (list, tuple)):
+            row = [row]
+        safe_row = list(row)
+        if len(safe_row) < len(contents):
+            safe_row.extend([""] * (len(contents) - len(safe_row)))
+        elif len(safe_row) > len(contents):
+            safe_row = safe_row[:len(contents)]
+        for ci, cell in enumerate(safe_row):
+            text = cell.strip() if isinstance(cell, str) else str(cell).strip()
             if ci < len(contents):
                 sep = " " if contents[ci] else ""
-                contents[ci] += sep + cell.strip()
+                contents[ci] += sep + text
 
     # Build color-coded cards
     def make_cell(idx):

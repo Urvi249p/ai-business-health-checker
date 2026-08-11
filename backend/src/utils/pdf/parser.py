@@ -107,6 +107,7 @@ def parse_markdown(
                 i += 1
             rows = [_parse_md_row(l) for l in tbl_lines
                     if not _is_md_sep(l)]
+            rows = [row if isinstance(row, (list, tuple)) else [row] for row in rows]
             if rows:
                 story.append(Spacer(1, 6))
                 try:
