@@ -4,46 +4,81 @@ import AuthPage from './pages/AuthPage';
 import DashboardPage from './pages/DashboardPage';
 import SettingsPage from './pages/SettingsPage';
 import AuditlyBrand from './components/AuditlyBrand';
+import { apiFetch as apiFetchClient } from './utils/apiClient';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
 
 function App() {
   const location = useLocation();
   const [token, setToken] = useState(localStorage.getItem('token') || '');
+  const [refreshToken, setRefreshToken] = useState(localStorage.getItem('refreshToken') || '');
   const [user, setUser] = useState(() => {
     const storedUser = localStorage.getItem('user');
     return storedUser ? JSON.parse(storedUser) : null;
   });
 
   useEffect(() => {
-    localStorage.setItem('token', token);
-    if (!token) {
+    if (token) {
+      localStorage.setItem('token', token);
+      localStorage.setItem('refreshToken', refreshToken);
+    } else {
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
       localStorage.removeItem('user');
       setUser(null);
     }
-  }, [token]);
+  }, [token, refreshToken]);
+
+  const getTokens = () => ({ accessToken: token, refreshToken });
+
+  const setTokens = ({ accessToken: newAccessToken, refreshToken: newRefreshToken }) => {
+    if (newAccessToken) {
+      setToken(newAccessToken);
+    }
+    if (newRefreshToken) {
+      setRefreshToken(newRefreshToken);
+    }
+  };
 
   const handleLogin = (authData) => {
+    const authUser = {
+      user_id: authData.user_id,
+      email: authData.email,
+      username: authData.username,
+    };
+
     localStorage.setItem('token', authData.access_token);
-    localStorage.setItem('user', JSON.stringify({
-      user_id: authData.user_id,
-      email: authData.email,
-      username: authData.username,
-    }));
+    localStorage.setItem('refreshToken', authData.refresh_token || '');
+    localStorage.setItem('user', JSON.stringify(authUser));
+
     setToken(authData.access_token);
-    setUser({
-      user_id: authData.user_id,
-      email: authData.email,
-      username: authData.username,
-    });
+    setRefreshToken(authData.refresh_token || '');
+    setUser(authUser);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setToken('');
-    setUser(null);
+  const handleLogout = async () => {
+    try {
+      await fetch(`${API_BASE_URL}/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+    } catch (e) {
+      // ignore network errors and still clear local state
+    } finally {
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('user');
+      setToken('');
+      setRefreshToken('');
+      setUser(null);
+    }
   };
+
+  const apiFetch = (path, options = {}) =>
+    apiFetchClient(API_BASE_URL, path, options, getTokens, setTokens, handleLogout);
 
   return (
     <div className={`app-shell ${token ? 'app-shell--authenticated' : ''}`}>
@@ -114,14 +149,15 @@ function App() {
             <main className="page-content">
               <Routes>
                 <Route path="/" element={<Navigate to="/overview" replace />} />
-                <Route path="/overview" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="home" />} />
-                <Route path="/audit" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="overview" />} />
-                <Route path="/reports" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="reports" />} />
-                <Route path="/history" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} view="history" />} />
+                <Route path="/overview" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} apiFetch={apiFetch} view="home" />} />
+                <Route path="/audit" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} apiFetch={apiFetch} view="overview" />} />
+                <Route path="/reports" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} apiFetch={apiFetch} view="reports" />} />
+                <Route path="/history" element={<DashboardPage apiBaseUrl={API_BASE_URL} token={token} apiFetch={apiFetch} view="history" />} />
                 <Route path="/settings" element={
                   <SettingsPage 
                     apiBaseUrl={API_BASE_URL} 
                     token={token} 
+                    apiFetch={apiFetch}
                     user={user}
                     onLogout={handleLogout}
                   />} 

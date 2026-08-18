@@ -1,4 +1,8 @@
-function ReportsPage({ completedReports, handleDownload, downloadingJobId, getBusinessLabel }) {
+import SkeletonRows from '../components/SkeletonRows';
+
+function ReportsPage({ completedReports, handleDownload, downloadingJobId, getBusinessLabel, loading = false }) {
+  if (loading) return <SkeletonRows count={4} />;
+
   return (
     <div className="dashboard-grid">
       <section className="card card--hero">

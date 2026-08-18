@@ -13,6 +13,7 @@ from src.config.database import (
 from src.config.settings import settings
 from src.utils.logger import logger
 from src.utils.pdf import convert_md_to_pdf
+from src.utils.ws_manager import manager
 
 
 async def run_audit_background(
@@ -27,6 +28,10 @@ async def run_audit_background(
     try:
         logger.info(f"Audit job {job_id}: updating status to processing")
         await update_job_status(job_id, "processing")
+        try:
+            await manager.broadcast(job_id, {"type": "status_update", "status": "processing"})
+        except Exception:
+            logger.debug("Failed to broadcast processing status for job_id=%s", job_id, exc_info=True)
 
         # Fetch interview Q&A saved during the interview phase
         qa_pairs = await get_interview_qa(job_id)
@@ -77,6 +82,13 @@ async def run_audit_background(
             asyncio.run_coroutine_threadsafe(
                 update_job_agent(job_id, agent_role), loop
             )
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    manager.broadcast(job_id, {"type": "agent_update", "current_agent": agent_role, "status": "processing"}),
+                    loop,
+                )
+            except Exception:
+                logger.debug("Failed to schedule agent_update broadcast for job_id=%s", job_id, exc_info=True)
 
         markdown_result = await loop.run_in_executor(
             None,
@@ -113,6 +125,10 @@ async def run_audit_background(
         logger.info(
             f"Audit job {job_id}: completed successfully"
         )
+        try:
+            await manager.broadcast(job_id, {"type": "status_update", "status": "completed"})
+        except Exception:
+            logger.debug("Failed to broadcast completed status for job_id=%s", job_id, exc_info=True)
 
         # If this was a retry, delete the original failed job
         parent_id = await get_job_parent(job_id)
@@ -140,3 +156,7 @@ async def run_audit_background(
             )
         else:
             await fail_job(job_id, error_message)
+            try:
+                await manager.broadcast(job_id, {"type": "status_update", "status": "failed", "error": error_message})
+            except Exception:
+                logger.debug("Failed to broadcast failed status for job_id=%s", job_id, exc_info=True)

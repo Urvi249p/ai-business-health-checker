@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { useToast } from '../components/Toast';
 
-function SettingsPage({ apiBaseUrl, token, user, onLogout }) {
+function SettingsPage({ apiBaseUrl, token, apiFetch, user, onLogout }) {
   // ── Profile state ─────────────────────────────────
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -17,9 +18,12 @@ function SettingsPage({ apiBaseUrl, token, user, onLogout }) {
   const [twoFALoading, setTwoFALoading] = useState(false);
   const [twoFAMessage, setTwoFAMessage] = useState('');
   const [twoFAError, setTwoFAError] = useState('');
+  const [backupCodes, setBackupCodes] = useState([]);
+  const [showBackupCodes, setShowBackupCodes] = useState(false);
   const [showDisableConfirm, setShowDisableConfirm] = useState(false);
 
   const otpRefs = useRef([]);
+  const { showToast } = useToast();
 
   // ── Load profile ────────────────────────────────────
   useEffect(() => {
@@ -27,9 +31,7 @@ function SettingsPage({ apiBaseUrl, token, user, onLogout }) {
       setProfileLoading(true);
       setProfileError('');
       try {
-        const response = await fetch(`${apiBaseUrl}/auth/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const response = await apiFetch('/auth/me');
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || 'Unable to load profile');
         setProfile(data);
@@ -89,9 +91,8 @@ function SettingsPage({ apiBaseUrl, token, user, onLogout }) {
     setTwoFAError('');
     setTwoFAMessage('');
     try {
-      const response = await fetch(`${apiBaseUrl}/auth/enable-2fa`, {
+      const response = await apiFetch('/auth/enable-2fa', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
       if (!response.ok)
@@ -102,7 +103,9 @@ function SettingsPage({ apiBaseUrl, token, user, onLogout }) {
       resetOtp();
       setTimeout(() => otpRefs.current[0]?.focus(), 100);
     } catch (err) {
-      setTwoFAError(err.message || 'Unable to enable 2FA');
+      const msg = err.message || 'Unable to enable 2FA';
+      setTwoFAError(msg);
+      try { showToast(msg, 'error'); } catch (e) {}
     } finally {
       setTwoFALoading(false);
     }
@@ -122,7 +125,7 @@ function SettingsPage({ apiBaseUrl, token, user, onLogout }) {
     setOtpError('');
     try {
       // Use the current access token as temp_token for setup verification
-      const response = await fetch(`${apiBaseUrl}/auth/verify-2fa`, {
+      const response = await apiFetch('/auth/verify-2fa', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -142,17 +145,65 @@ function SettingsPage({ apiBaseUrl, token, user, onLogout }) {
       // 2FA is already enabled from the enable-2fa call
       // Update local profile state
       setProfile((prev) => ({ ...prev, is_2fa_enabled: true }));
-      setTwoFAStep('idle');
       setQrCodeUrl('');
       setTotpSecret('');
       resetOtp();
-      setTwoFAMessage('Two-factor authentication has been enabled successfully.');
-      setTimeout(() => setTwoFAMessage(''), 5000);
+
+      if (data.backup_codes) {
+        setBackupCodes(data.backup_codes);
+        setShowBackupCodes(true);
+      } else {
+        setTwoFAStep('idle');
+        setTwoFAMessage('Two-factor authentication has been enabled successfully.');
+        try { showToast('Two-factor authentication has been enabled successfully.', 'success'); } catch (e) {}
+        setTimeout(() => setTwoFAMessage(''), 5000);
+      }
 
     } catch (err) {
       setOtpError('Invalid code. Please try again.');
       setOtpShaking(true);
       setTimeout(() => setOtpShaking(false), 480);
+      try { showToast('Invalid code. Please try again.', 'error'); } catch (e) {}
+    } finally {
+      setTwoFALoading(false);
+    }
+  };
+
+  const handleCopyBackupCodes = async () => {
+    if (!backupCodes.length) return;
+    try {
+      await navigator.clipboard.writeText(backupCodes.join('\n'));
+      showToast('Backup codes copied to clipboard.', 'success');
+    } catch {
+      showToast('Unable to copy backup codes.', 'error');
+    }
+  };
+
+  const handleDoneBackupCodes = () => {
+    setShowBackupCodes(false);
+    setBackupCodes([]);
+    setTwoFAStep('idle');
+    setTwoFAMessage('Two-factor authentication has been enabled successfully.');
+    setTimeout(() => setTwoFAMessage(''), 5000);
+  };
+
+  const handleRegenerateBackupCodes = async () => {
+    setTwoFALoading(true);
+    setTwoFAError('');
+    try {
+      const response = await apiFetch('/auth/regenerate-backup-codes', {
+        method: 'POST',
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Unable to regenerate backup codes');
+
+      setBackupCodes(data.backup_codes || []);
+      setShowBackupCodes(true);
+      try { showToast('Old backup codes are now invalid.', 'warning'); } catch (e) {}
+    } catch (err) {
+      const msg = err.message || 'Unable to regenerate backup codes';
+      setTwoFAError(msg);
+      try { showToast(msg, 'error'); } catch (e) {}
     } finally {
       setTwoFALoading(false);
     }
@@ -164,9 +215,8 @@ function SettingsPage({ apiBaseUrl, token, user, onLogout }) {
     setTwoFAError('');
     setTwoFAMessage('');
     try {
-      const response = await fetch(`${apiBaseUrl}/auth/disable-2fa`, {
+      const response = await apiFetch('/auth/disable-2fa', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
       if (!response.ok)
@@ -174,9 +224,12 @@ function SettingsPage({ apiBaseUrl, token, user, onLogout }) {
       setProfile((prev) => ({ ...prev, is_2fa_enabled: false }));
       setShowDisableConfirm(false);
       setTwoFAMessage('Two-factor authentication has been disabled.');
+      try { showToast('Two-factor authentication has been disabled.', 'success'); } catch (e) {}
       setTimeout(() => setTwoFAMessage(''), 5000);
     } catch (err) {
-      setTwoFAError(err.message || 'Unable to disable 2FA');
+      const msg = err.message || 'Unable to disable 2FA';
+      setTwoFAError(msg);
+      try { showToast(msg, 'error'); } catch (e) {}
       setShowDisableConfirm(false);
     } finally {
       setTwoFALoading(false);
@@ -282,6 +335,42 @@ function SettingsPage({ apiBaseUrl, token, user, onLogout }) {
           </p>
         ) : null}
 
+        {/* ── Backup codes display ── */}
+        {showBackupCodes && backupCodes.length ? (
+          <div className="settings-2fa-setup">
+            <div className="settings-2fa-setup__qr-section">
+              <p className="settings-2fa-setup__step">Save your backup codes</p>
+              <h4>Save your backup codes</h4>
+              <p className="helper-text">
+                These codes are shown only once. Store them securely offline.
+              </p>
+              <div className="settings-2fa-setup__manual">
+                {backupCodes.map((code, index) => (
+                  <code key={index} className="settings-2fa-setup__secret">
+                    {code}
+                  </code>
+                ))}
+              </div>
+              <div className="settings-2fa-setup__actions">
+                <button
+                  className="btn btn--secondary"
+                  type="button"
+                  onClick={handleCopyBackupCodes}
+                >
+                  Copy all codes
+                </button>
+                <button
+                  className="btn btn--primary"
+                  type="button"
+                  onClick={handleDoneBackupCodes}
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {/* ── Idle state ── */}
         {twoFAStep === 'idle' && profile && !profileLoading ? (
           <div className="settings-2fa">
@@ -297,14 +386,24 @@ function SettingsPage({ apiBaseUrl, token, user, onLogout }) {
             </div>
 
             {profile.is_2fa_enabled ? (
-              <button
-                className="btn settings-btn--danger"
-                type="button"
-                onClick={() => setShowDisableConfirm(true)}
-                disabled={twoFALoading}
-              >
-                Disable Two-Factor Authentication
-              </button>
+              <>
+                <button
+                  className="btn btn--secondary"
+                  type="button"
+                  onClick={handleRegenerateBackupCodes}
+                  disabled={twoFALoading}
+                >
+                  Regenerate backup codes
+                </button>
+                <button
+                  className="btn settings-btn--danger"
+                  type="button"
+                  onClick={() => setShowDisableConfirm(true)}
+                  disabled={twoFALoading}
+                >
+                  Disable Two-Factor Authentication
+                </button>
+              </>
             ) : (
               <button
                 className="btn btn--primary"

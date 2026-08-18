@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import HomePage from './HomePage';
 import AuditPage from './AuditPage';
@@ -10,9 +10,11 @@ import {
   revenueOptions, tagOptions, 
   challengeOptions, goalOptions 
 } from '../constants/auditOptions';
+import { useToast } from '../components/Toast';
 
-function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
+function DashboardPage({ apiBaseUrl, token, apiFetch, view = 'home' }) {
   const navigate = useNavigate();
+  const { showToast } = useToast();
 
   // ── Form state ──────────────────────────────────────
   const [formData, setFormData] = useState(initialFormState);
@@ -21,6 +23,7 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
 
   // ── Shared state ────────────────────────────────────
   const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -46,34 +49,88 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
 
   // ── Load history ────────────────────────────────────
   const loadHistory = async () => {
+    setHistoryLoading(true);
     try {
-      const response = await fetch(`${apiBaseUrl}/audit/history`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await apiFetch('/audit/history');
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Unable to load audit history');
       setHistory(data);
     } catch (err) {
       setError(err.message || 'Unable to load history');
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
   useEffect(() => { loadHistory(); }, [token]);
 
-  // ── Status polling ──────────────────────────────────
+  // ── Autosave draft: load on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('auditly_draft_form');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        const { __currentStep, ...rest } = parsed;
+        setFormData((current) => ({ ...current, ...rest }));
+        if (__currentStep && Number.isFinite(__currentStep)) {
+          setCurrentStep(__currentStep);
+        }
+      }
+    } catch (err) {
+      // ignore invalid JSON
+      console.debug('Failed to load draft form', err);
+    }
+  }, []);
+
+  // ── Autosave draft: debounce save when formData or currentStep change
+  const _autosaveTimeout = useRef(null);
+  useEffect(() => {
+    // Skip saving untouched initial form on step 1
+    try {
+      const isInitial = currentStep === 1 && JSON.stringify(formData) === JSON.stringify(initialFormState);
+      if (isInitial) return;
+    } catch (e) {
+      // fallthrough to save if stringify fails
+    }
+
+    if (_autosaveTimeout.current) {
+      window.clearTimeout(_autosaveTimeout.current);
+    }
+    _autosaveTimeout.current = window.setTimeout(() => {
+      try {
+        const toSave = { ...formData, __currentStep: currentStep };
+        localStorage.setItem('auditly_draft_form', JSON.stringify(toSave));
+      } catch (err) {
+        console.debug('Failed to save draft form', err);
+      }
+    }, 500);
+
+    return () => {
+      if (_autosaveTimeout.current) {
+        window.clearTimeout(_autosaveTimeout.current);
+        _autosaveTimeout.current = null;
+      }
+    };
+  }, [formData, currentStep]);
+
+  // ── Real-time updates via WebSocket (with polling fallback) ──
   useEffect(() => {
     if (!activeJobId || !token) return;
-    let cancelled = false;
+
+    let ws;
+    let fallbackId = null;
+    let connectTimeout = null;
+    let closedByUs = false;
 
     const pollStatus = async () => {
       try {
-        const response = await fetch(
-          `${apiBaseUrl}/audit/${activeJobId}/status`,
-          { headers: { Authorization: `Bearer ${token}` } }
+        const response = await apiFetch(
+          `/audit/${activeJobId}/status`,
+          { headers: { } }
         );
         const data = await response.json();
-        if (!response.ok) throw new Error(data.detail);
-        if (cancelled) return;
+        if (!response.ok) throw new Error(data.detail || 'Unable to load status');
 
         const status = formatStatus(data.status);
         setPipelineStatus(status);
@@ -92,23 +149,91 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
           setActiveAgentIndex((c) => c < 0 ? 0 : c);
         }
       } catch (err) {
-        if (!cancelled) setError(err.message || 'Unable to refresh status');
+        setError(err.message || 'Unable to refresh status');
       }
     };
 
-    pollStatus();
-    const id = window.setInterval(pollStatus, 5000);
-    return () => { cancelled = true; window.clearInterval(id); };
-  }, [activeJobId, token, apiBaseUrl]);
+    const startFallbackPolling = (initial = true) => {
+      if (fallbackId) return;
+      if (initial) pollStatus();
+      fallbackId = window.setInterval(pollStatus, 15000);
+    };
 
-  // ── Agent progress simulation ───────────────────────
-  useEffect(() => {
-    if (pipelineStatus !== 'processing' || activeAgentIndex >= agentSteps.length - 1) return;
-    const id = window.setInterval(() => {
-      setActiveAgentIndex((c) => c < 0 ? 0 : c + 1 >= agentSteps.length ? c : c + 1);
-    }, 15000);
-    return () => window.clearInterval(id);
-  }, [pipelineStatus, activeAgentIndex]);
+    const stopFallbackPolling = () => {
+      if (fallbackId) {
+        window.clearInterval(fallbackId);
+        fallbackId = null;
+      }
+    };
+
+    try {
+      // Build ws(s) URL from apiBaseUrl
+      const wsProtocol = apiBaseUrl.startsWith('https') ? 'wss' : 'ws';
+      const base = apiBaseUrl.replace(/^https?:/, '');
+      const wsUrl = `${wsProtocol}:${base}/audit/${activeJobId}/ws?token=${encodeURIComponent(token)}`;
+
+      ws = new WebSocket(wsUrl);
+
+      // If connection doesn't open within ~3s, fall back to polling
+      connectTimeout = window.setTimeout(() => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          startFallbackPolling(true);
+        }
+      }, 3000);
+
+      ws.onopen = () => {
+        // server sends initial state; stop fallback polling if running
+        stopFallbackPolling();
+        if (connectTimeout) {
+          window.clearTimeout(connectTimeout);
+          connectTimeout = null;
+        }
+      };
+
+      ws.onmessage = async (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'agent_update') {
+            setPipelineStatus(formatStatus(msg.status || 'processing'));
+            const idx = agentSteps.findIndex((s) => s.name === msg.current_agent);
+            if (idx >= 0) {
+              setActiveAgentIndex(idx);
+            }
+            setFailedAgentIndex(-1);
+          } else if (msg.type === 'status_update') {
+            const s = formatStatus(msg.status);
+            setPipelineStatus(s);
+            if (s === 'completed') {
+              setActiveAgentIndex(agentSteps.length - 1);
+              setFailedAgentIndex(-1);
+              await loadHistory();
+            } else if (s === 'failed') {
+              setFailedAgentIndex((c) => c >= 0 ? c : (activeAgentIndex >= 0 ? activeAgentIndex : 0));
+            }
+          }
+        } catch (err) {
+          console.debug('Invalid WS message', err);
+        }
+      };
+
+      ws.onerror = () => {
+        startFallbackPolling(true);
+      };
+
+      ws.onclose = () => {
+        if (!closedByUs) startFallbackPolling(true);
+      };
+    } catch (err) {
+      startFallbackPolling(true);
+    }
+
+    return () => {
+      closedByUs = true;
+      if (connectTimeout) window.clearTimeout(connectTimeout);
+      stopFallbackPolling();
+      try { if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) ws.close(); } catch (e) {}
+    };
+  }, [activeJobId, token, apiBaseUrl]);
 
   // ── Helpers ─────────────────────────────────────────
   const formatStatus = (status) => {
@@ -191,11 +316,10 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
         goals: formData.goals || [],
         additional_notes: formData.additional_notes.trim() || null,
       };
-      const response = await fetch(`${apiBaseUrl}/audit`, {
+      const response = await apiFetch('/audit', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(payload),
       });
@@ -207,6 +331,8 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
       setCurrentQuestionIndex(0);
       setCurrentAnswer('');
       setInterviewStep('interview');
+      try { localStorage.removeItem('auditly_draft_form'); } catch (e) {}
+      try { showToast('Audit started', 'success'); } catch (e) {}
     } catch (err) {
       setError(err.message || 'Unable to start audit');
     } finally {
@@ -219,13 +345,12 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
     setInterviewLoading(true);
     setInterviewError('');
     try {
-      const response = await fetch(
-        `${apiBaseUrl}/audit/${activeJobId}/interview/complete`,
+      const response = await apiFetch(
+        `/audit/${activeJobId}/interview/complete`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({ answers: interviewAnswers }),
         }
@@ -236,6 +361,7 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
       setActiveAgentIndex(-1);
       setInterviewStep('pipeline');
       await loadHistory();
+      try { showToast('Interview submitted, audit started', 'success'); } catch (e) {}
     } catch (err) {
       setInterviewError(err.message || 'Unable to submit answers');
     } finally {
@@ -271,9 +397,7 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
     setDownloadingJobId(jobId);
     setError('');
     try {
-      const response = await fetch(`${apiBaseUrl}/audit/${jobId}/download`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await apiFetch(`/audit/${jobId}/download`);
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.detail || 'Unable to download report');
@@ -287,8 +411,10 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+      try { showToast('Report downloaded', 'success'); } catch (e) {}
     } catch (err) {
       setError(err.message || 'Unable to download report');
+      try { showToast(err.message || 'Unable to download report', 'error'); } catch (e) {}
     } finally {
       setDownloadingJobId(null);
     }
@@ -298,9 +424,9 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
     setError('');
     setLoading(true);
     try {
-      const response = await fetch(
-        `${apiBaseUrl}/audit/${jobId}/status`,
-        { headers: { Authorization: `Bearer ${token}` } }
+      const response = await apiFetch(
+        `/audit/${jobId}/status`,
+        { headers: { } }
       );
       const data = await response.json();
       if (!response.ok) 
@@ -317,6 +443,7 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
       setCurrentQuestionIndex(0);
       setCurrentAnswer('');
       setInterviewStep('interview');
+      try { localStorage.removeItem('auditly_draft_form'); } catch (e) {}
       setFormData((current) => ({
         ...current,
         business_name: businessName || 'Your Business',
@@ -336,9 +463,9 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
     setRetryLoading(true);
     try {
       // Fetch full job details including business_profile
-      const response = await fetch(
-        `${apiBaseUrl}/audit/${jobId}/detail`,
-        { headers: { Authorization: `Bearer ${token}` } }
+      const response = await apiFetch(
+        `/audit/${jobId}/detail`,
+        { headers: { } }
       );
       const data = await response.json();
       if (!response.ok)
@@ -389,13 +516,12 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
     setError('');
     setMessage('');
     try {
-      const response = await fetch(
-        `${apiBaseUrl}/audit/retry/${retryParentJobId}`,
+      const response = await apiFetch(
+        `/audit/retry/${retryParentJobId}`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
           },
         }
       );
@@ -413,6 +539,8 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
       setRetryProfile(null);
       setRetryParentJobId('');
       setInterviewStep('interview');
+      try { localStorage.removeItem('auditly_draft_form'); } catch (e) {}
+      try { showToast('Retry started', 'success'); } catch (e) {}
 
     } catch (err) {
       setError(err.message || 'Unable to retry audit');
@@ -448,8 +576,8 @@ function DashboardPage({ apiBaseUrl, token, view = 'home' }) {
 
   // ── View routing ────────────────────────────────────
   if (view === 'home') return <HomePage />;
-  if (view === 'reports') return <ReportsPage completedReports={completedReports} {...sharedProps} />;
-  if (view === 'history') return <HistoryPage history={history} {...sharedProps} />;
+  if (view === 'reports') return <ReportsPage completedReports={completedReports} {...sharedProps} loading={historyLoading} />;
+  if (view === 'history') return <HistoryPage history={history} {...sharedProps} loading={historyLoading} />;
   return <AuditPage {...auditProps} />;
 }
 

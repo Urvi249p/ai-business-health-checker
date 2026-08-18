@@ -28,6 +28,7 @@ TABLE: audit_jobs
 """
 
 import json
+from uuid import uuid4
 from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import parse_qs, urlsplit, urlunsplit
@@ -130,6 +131,41 @@ async def init_db() -> None:
             )
         """)
 
+        # password_reset_tokens table
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id          TEXT PRIMARY KEY,
+                user_id     TEXT NOT NULL,
+                token_hash  TEXT NOT NULL,
+                expires_at  TEXT NOT NULL,
+                used        BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at  TEXT NOT NULL
+            )
+        """)
+
+        # backup_codes table
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS backup_codes (
+                id          TEXT PRIMARY KEY,
+                user_id     TEXT NOT NULL,
+                code_hash   TEXT NOT NULL,
+                used        BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at  TEXT NOT NULL
+            )
+        """)
+
+        # refresh_tokens table
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS refresh_tokens (
+                id          TEXT PRIMARY KEY,
+                user_id     TEXT NOT NULL,
+                token_hash  TEXT NOT NULL,
+                expires_at  TEXT NOT NULL,
+                revoked     BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at  TEXT NOT NULL
+            )
+        """)
+
         # Safe migrations — add columns if they don't exist yet
         # (handles existing DBs that were created before these columns)
         for column_sql in [
@@ -218,6 +254,155 @@ async def disable_user_2fa(user_id: str) -> None:
             SET totp_secret = NULL, is_2fa_enabled = FALSE
             WHERE id = $1
             """,
+            user_id,
+        )
+
+
+# ── Password reset functions ─────────────────────────────────────────────────
+
+async def create_reset_token(token_id: str, user_id: str, token_hash: str, expires_at: str) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, created_at)
+            VALUES ($1, $2, $3, $4, $5)
+            """,
+            token_id,
+            user_id,
+            token_hash,
+            expires_at,
+            _now(),
+        )
+
+
+async def get_reset_token(token_hash: str) -> dict | None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM password_reset_tokens WHERE token_hash = $1 AND used = FALSE",
+            token_hash,
+        )
+        return _row_to_dict(row)
+
+
+async def mark_reset_token_used(token_id: str) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE password_reset_tokens SET used = TRUE WHERE id = $1",
+            token_id,
+        )
+
+
+async def update_user_password(user_id: str, hashed_password: str) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE users SET hashed_password = $1 WHERE id = $2",
+            hashed_password,
+            user_id,
+        )
+
+
+# ── Backup code functions ───────────────────────────────────────────────────
+
+async def create_backup_codes(user_id: str, code_hashes: list[str]) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM backup_codes WHERE user_id = $1",
+            user_id,
+        )
+        for code_hash in code_hashes:
+            await conn.execute(
+                "INSERT INTO backup_codes (id, user_id, code_hash, used, created_at) VALUES ($1, $2, $3, FALSE, $4)",
+                str(uuid4()),
+                user_id,
+                code_hash,
+                _now(),
+            )
+
+
+async def get_unused_backup_codes_count(user_id: str) -> int:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT COUNT(*) FROM backup_codes WHERE user_id = $1 AND used = FALSE",
+            user_id,
+        )
+        return int(row[0]) if row else 0
+
+
+async def find_and_consume_backup_code(user_id: str, code_hash: str) -> bool:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id FROM backup_codes WHERE user_id = $1 AND code_hash = $2 AND used = FALSE",
+            user_id,
+            code_hash,
+        )
+        if not row:
+            return False
+
+        await conn.execute(
+            "UPDATE backup_codes SET used = TRUE WHERE id = $1",
+            row["id"],
+        )
+        return True
+
+
+async def delete_backup_codes(user_id: str) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM backup_codes WHERE user_id = $1",
+            user_id,
+        )
+
+
+# ── Refresh token functions ─────────────────────────────────────────────────
+
+async def create_refresh_token(token_id: str, user_id: str, token_hash: str, expires_at: str) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at)
+            VALUES ($1, $2, $3, $4, $5)
+            """,
+            token_id,
+            user_id,
+            token_hash,
+            expires_at,
+            _now(),
+        )
+
+
+async def get_refresh_token(token_hash: str) -> dict | None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM refresh_tokens WHERE token_hash = $1 AND revoked = FALSE",
+            token_hash,
+        )
+        return _row_to_dict(row)
+
+
+async def revoke_refresh_token(token_id: str) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE refresh_tokens SET revoked = TRUE WHERE id = $1",
+            token_id,
+        )
+
+
+async def revoke_all_user_refresh_tokens(user_id: str) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1",
             user_id,
         )
 

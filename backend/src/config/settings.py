@@ -42,6 +42,9 @@ class Settings:
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "change-this-secret")
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+    REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+    # NOTE: JWT_EXPIRE_MINUTES is kept for backward compatibility; use ACCESS_TOKEN_EXPIRE_MINUTES for new login flows.
 
     # ── 2FA ──────────────────────────────────────────────────
     TOTP_ISSUER: str = os.getenv("TOTP_ISSUER", "BusinessAuditAPI")
