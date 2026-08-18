@@ -316,6 +316,9 @@ function AuditPage({
               <div className="audit-progress__fill" style={{ width: `${(currentStep / 4) * 100}%` }} />
             </div>
           </div>
+          {interviewStep === 'form' ? (
+            <p className="helper-text--tight">Draft auto-saved</p>
+          ) : null}
         </div>
 
         <div className="audit-form-card__body">

@@ -1,27 +1,52 @@
 from uuid import uuid4
+from datetime import datetime, timedelta, timezone
 
 import pyotp
 import qrcode
 import io
 import base64
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm, HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr, Field
 from jose import JWTError
 
 from src.config.database import (
     create_user,
+    create_backup_codes,
+    create_refresh_token,
+    create_reset_token,
+    delete_backup_codes,
+    find_and_consume_backup_code,
+    get_refresh_token,
+    get_reset_token,
+    get_unused_backup_codes_count,
     get_user_by_email,
-    get_user_by_username,
     get_user_by_id,
+    get_user_by_username,
+    mark_reset_token_used,
+    revoke_all_user_refresh_tokens,
+    revoke_refresh_token,
+    update_user_password,
     enable_user_2fa,
     disable_user_2fa,
 )
 from src.config.settings import settings
-from src.utils.auth import create_access_token, hash_password, verify_password, decode_access_token
+from src.utils.auth import (
+    create_access_token,
+    generate_backup_codes,
+    generate_refresh_token,
+    generate_reset_token,
+    hash_backup_code,
+    hash_password,
+    hash_reset_token,
+    hash_refresh_token,
+    verify_password,
+    decode_access_token,
+)
 from src.utils.auth_deps import get_current_user
 from src.utils.logger import logger
+from src.utils.rate_limit import limiter
 
 router = APIRouter()
 bearer_scheme = HTTPBearer()
@@ -37,6 +62,7 @@ class RegisterRequest(BaseModel):
 
 class AuthResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     user_id: str
     email: str
@@ -61,6 +87,23 @@ class Enable2FAResponse(BaseModel):
 class Verify2FARequest(BaseModel):
     temp_token: str      # short-lived token from /login
     otp_code: str        # 6-digit code from Google Authenticator
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8)
 
 
 # ── TOTP helpers (local to this router) ──────────────────────────────────────
@@ -90,7 +133,8 @@ def _generate_qr_base64(uri: str) -> str:
 # ── 1. REGISTER ───────────────────────────────────────────────────────────────
 
 @router.post("/register", response_model=AuthResponse)
-async def register_user(payload: RegisterRequest) -> AuthResponse:
+@limiter.limit("3/minute")
+async def register_user(request: Request, payload: RegisterRequest) -> AuthResponse:
     """Create a new user account and return a JWT access token."""
     if await get_user_by_email(payload.email):
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -105,11 +149,21 @@ async def register_user(payload: RegisterRequest) -> AuthResponse:
         user_id=user_id,
         email=payload.email,
         username=payload.username,
+        expire_minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+    )
+    raw_refresh_token, refresh_hash = generate_refresh_token()
+    refresh_expires_at = (datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)).isoformat()
+    await create_refresh_token(
+        token_id=str(uuid4()),
+        user_id=user_id,
+        token_hash=refresh_hash,
+        expires_at=refresh_expires_at,
     )
     logger.info(f"New user registered: {payload.email}")
 
     return AuthResponse(
         access_token=access_token,
+        refresh_token=raw_refresh_token,
         user_id=user_id,
         email=payload.email,
         username=payload.username,
@@ -119,7 +173,8 @@ async def register_user(payload: RegisterRequest) -> AuthResponse:
 # ── 2. LOGIN ──────────────────────────────────────────────────────────────────
 
 @router.post("/login")
-async def login_user(form_data: OAuth2PasswordRequestForm = Depends()):
+@limiter.limit("5/minute")
+async def login_user(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     """
     Authenticate user.
     - If 2FA is disabled  → return full access token (same as before)
@@ -155,15 +210,25 @@ async def login_user(form_data: OAuth2PasswordRequestForm = Depends()):
         user_id=user["id"],
         email=user["email"],
         username=user["username"],
+        expire_minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+    )
+    raw_refresh_token, refresh_hash = generate_refresh_token()
+    refresh_expires_at = (datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)).isoformat()
+    await create_refresh_token(
+        token_id=str(uuid4()),
+        user_id=user["id"],
+        token_hash=refresh_hash,
+        expires_at=refresh_expires_at,
     )
     logger.info(f"User logged in: {form_data.username}")
 
-    return AuthResponse(
-        access_token=access_token,
-        user_id=user["id"],
-        email=user["email"],
-        username=user["username"],
-    )
+    return {
+        "access_token": access_token,
+        "refresh_token": raw_refresh_token,
+        "user_id": user["id"],
+        "email": user["email"],
+        "username": user["username"],
+    }
 
 
 # ── 3. ENABLE 2FA ─────────────────────────────────────────────────────────────
@@ -193,47 +258,186 @@ async def enable_2fa(current_user: dict = Depends(get_current_user)) -> Enable2F
 
 # ── 4. VERIFY 2FA (complete login) ───────────────────────────────────────────
 
-@router.post("/verify-2fa", response_model=AuthResponse)
-async def verify_2fa(data: Verify2FARequest) -> AuthResponse:
+@router.post("/verify-2fa")
+@limiter.limit("5/minute")
+async def verify_2fa(request: Request, data: Verify2FARequest) -> dict:
     """
-    Verify the OTP code using the temp_token from /login.
-    Returns a full access token on success.
+    Verify the OTP code using the provided token.
+    Accepts a 2FA-pending token on login, or the user's live access token during setup confirmation.
     """
-    # Decode the temp token
+    # Decode the token (login temp token or live access token during setup)
     try:
         payload = decode_access_token(data.temp_token)
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired temp token")
 
-    # Must be a pending 2FA token
-    if not payload.get("2fa_pending"):
-        raise HTTPException(status_code=400, detail="Not a 2FA pending token")
-
+    is_setup_confirmation = not bool(payload.get("2fa_pending"))
     user = await get_user_by_id(payload.get("user_id"))
     if not user or not user.get("totp_secret"):
         raise HTTPException(status_code=404, detail="User not found or 2FA not set up")
 
-    # Verify OTP
-    if not _verify_totp(user["totp_secret"], data.otp_code):
+    # Verify OTP; if not valid, also allow backup code consumption.
+    is_backup_code = False
+    if _verify_totp(user["totp_secret"], data.otp_code):
+        valid = True
+    else:
+        is_backup_code = await find_and_consume_backup_code(
+            user["id"],
+            hash_backup_code(data.otp_code),
+        )
+        valid = bool(is_backup_code)
+
+    if not valid:
         raise HTTPException(status_code=401, detail="Invalid OTP code")
 
-    # Issue full access token
     access_token = create_access_token(
         user_id=user["id"],
         email=user["email"],
         username=user["username"],
+        expire_minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES,
     )
-    logger.info(f"2FA verified, full token issued: {user['email']}")
+    raw_refresh_token, refresh_hash = generate_refresh_token()
+    refresh_expires_at = (datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)).isoformat()
+    await create_refresh_token(
+        token_id=str(uuid4()),
+        user_id=user["id"],
+        token_hash=refresh_hash,
+        expires_at=refresh_expires_at,
+    )
 
-    return AuthResponse(
-        access_token=access_token,
+    response = {
+        "access_token": access_token,
+        "refresh_token": raw_refresh_token,
+        "user_id": user["id"],
+        "email": user["email"],
+        "username": user["username"],
+    }
+
+    if is_setup_confirmation:
+        existing_backup_count = await get_unused_backup_codes_count(user["id"])
+        if existing_backup_count == 0:
+            raw_backup_codes = generate_backup_codes()
+            hashed_codes = [hash_backup_code(code) for code in raw_backup_codes]
+            await create_backup_codes(user["id"], hashed_codes)
+            # Shown once and never retrievable again.
+            response["backup_codes"] = raw_backup_codes
+
+    logger.info(f"2FA verified, full token issued: {user['email']}")
+    return response
+
+
+@router.post("/refresh")
+@limiter.limit("20/minute")
+async def refresh_token(request: Request, payload: RefreshRequest) -> dict:
+    """Rotate refresh tokens and issue a new access token."""
+    token_hash = hash_refresh_token(payload.refresh_token)
+    row = await get_refresh_token(token_hash)
+    if not row:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    expires_at = datetime.fromisoformat(row["expires_at"])
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=401, detail="Refresh token expired")
+
+    await revoke_refresh_token(row["id"])
+    user = await get_user_by_id(row["user_id"])
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    access_token = create_access_token(
         user_id=user["id"],
         email=user["email"],
         username=user["username"],
+        expire_minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES,
     )
+    raw_refresh_token, refresh_hash = generate_refresh_token()
+    refresh_expires_at = (datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)).isoformat()
+    await create_refresh_token(
+        token_id=str(uuid4()),
+        user_id=user["id"],
+        token_hash=refresh_hash,
+        expires_at=refresh_expires_at,
+    )
+
+    return {
+        "access_token": access_token,
+        "refresh_token": raw_refresh_token,
+        "user_id": user["id"],
+        "email": user["email"],
+        "username": user["username"],
+    }
+
+
+@router.post("/logout")
+async def logout(request: Request, payload: LogoutRequest) -> dict:
+    """Revoke the provided refresh token and return success."""
+    token_hash = hash_refresh_token(payload.refresh_token)
+    row = await get_refresh_token(token_hash)
+    if row:
+        await revoke_refresh_token(row["id"])
+    return {"message": "Logged out successfully"}
+
+
+@router.post("/forgot-password")
+@limiter.limit("3/minute")
+async def forgot_password(request: Request, payload: ForgotPasswordRequest) -> dict:
+    """Begin password reset flow without leaking whether the email exists."""
+    user = await get_user_by_email(payload.email)
+    if not user:
+        return {"message": "If that email exists, a reset link has been generated"}
+
+    raw_token, token_hash = generate_reset_token()
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
+    await create_reset_token(
+        token_id=str(uuid4()),
+        user_id=user["id"],
+        token_hash=token_hash,
+        expires_at=expires_at,
+    )
+    # In production this would be emailed and the raw token would never be returned.
+    return {
+        "message": "Reset token generated (dev mode — no email configured)",
+        "reset_token": raw_token,
+        "expires_in_minutes": 30,
+    }
+
+
+@router.post("/reset-password")
+@limiter.limit("5/minute")
+async def reset_password(request: Request, payload: ResetPasswordRequest) -> dict:
+    """Complete password reset when the user provides a valid reset token."""
+    token_hash = hash_reset_token(payload.token)
+    row = await get_reset_token(token_hash)
+    if not row:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+    expires_at = datetime.fromisoformat(row["expires_at"])
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Reset token has expired")
+
+    new_hashed = hash_password(payload.new_password)
+    await update_user_password(row["user_id"], new_hashed)
+    await revoke_all_user_refresh_tokens(row["user_id"])
+    await mark_reset_token_used(row["id"])
+
+    return {"message": "Password has been reset successfully"}
 
 
 # ── 5. DISABLE 2FA ───────────────────────────────────────────────────────────
+
+@router.post("/regenerate-backup-codes")
+@limiter.limit("3/hour")
+async def regenerate_backup_codes(request: Request, current_user: dict = Depends(get_current_user)) -> dict:
+    """Generate a fresh set of backup codes for the authenticated user."""
+    if not current_user.get("is_2fa_enabled"):
+        raise HTTPException(status_code=400, detail="2FA must be enabled to regenerate backup codes")
+
+    raw_backup_codes = generate_backup_codes()
+    hashed_codes = [hash_backup_code(code) for code in raw_backup_codes]
+    await create_backup_codes(current_user["id"], hashed_codes)
+
+    return {"backup_codes": raw_backup_codes}
+
 
 @router.post("/disable-2fa")
 async def disable_2fa(current_user: dict = Depends(get_current_user)) -> dict:
@@ -245,6 +449,7 @@ async def disable_2fa(current_user: dict = Depends(get_current_user)) -> dict:
         raise HTTPException(status_code=400, detail="2FA is not enabled")
 
     await disable_user_2fa(current_user["id"])
+    await delete_backup_codes(current_user["id"])
     logger.info(f"2FA disabled for: {current_user['email']}")
     return {"message": "2FA disabled successfully"}
 

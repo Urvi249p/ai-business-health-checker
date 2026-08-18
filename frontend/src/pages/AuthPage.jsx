@@ -7,7 +7,17 @@ function AuthPage({ apiBaseUrl, onLogin }) {
   const [form, setForm] = useState({ username: '', email: '', password: '' });
   const [tempToken, setTempToken] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [useBackupCode, setUseBackupCode] = useState(false);
+  const [backupCodeInput, setBackupCodeInput] = useState('');
   const [error, setError] = useState('');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [resetToken, setResetToken] = useState('');
+  const [resetTokenInput, setResetTokenInput] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [forgotError, setForgotError] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState('');
+  const [resetSuccess, setResetSuccess] = useState(false);
   const [otpError, setOtpError] = useState('');
   const [loading, setLoading] = useState(false);
   const [otpShaking, setOtpShaking] = useState(false);
@@ -25,6 +35,8 @@ function AuthPage({ apiBaseUrl, onLogin }) {
 
   const resetOtpState = () => {
     setOtp(['', '', '', '', '', '']);
+    setUseBackupCode(false);
+    setBackupCodeInput('');
     setOtpError('');
     setOtpShaking(false);
     setTempToken('');
@@ -125,8 +137,16 @@ function AuthPage({ apiBaseUrl, onLogin }) {
     setOtpError('');
     setLoading(true);
 
-    const code = otp.join('');
-    if (code.length !== 6) {
+    const code = useBackupCode ? backupCodeInput.trim() : otp.join('');
+    if (!code) {
+      setOtpError(useBackupCode ? 'Please enter your backup code.' : 'Please enter the 6-digit code.');
+      setOtpShaking(true);
+      window.setTimeout(() => setOtpShaking(false), 480);
+      setLoading(false);
+      return;
+    }
+
+    if (!useBackupCode && code.length !== 6) {
       setOtpError('Please enter the 6-digit code.');
       setOtpShaking(true);
       window.setTimeout(() => setOtpShaking(false), 480);
@@ -167,6 +187,60 @@ function AuthPage({ apiBaseUrl, onLogin }) {
     }
   };
 
+  const handleForgotSubmit = async (event) => {
+    event.preventDefault();
+    setForgotError('');
+    setForgotMessage('');
+    setResetSuccess(false);
+    setForgotLoading(true);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Unable to request password reset');
+
+      setResetToken(data.reset_token || '');
+      setResetTokenInput(data.reset_token || '');
+      setForgotMessage(data.message || 'If that email exists, a reset link has been generated');
+      setAuthStep('reset');
+    } catch (err) {
+      setForgotError(err.message || 'Unable to request password reset');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleResetSubmit = async (event) => {
+    event.preventDefault();
+    setForgotError('');
+    setForgotMessage('');
+    setResetSuccess(false);
+    setForgotLoading(true);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: resetTokenInput, new_password: newPassword }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Unable to reset password');
+
+      setForgotMessage(data.message || 'Password has been reset successfully');
+      setResetSuccess(true);
+    } catch (err) {
+      setForgotError(err.message || 'Unable to reset password');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
   const renderLoginView = () => (
     <div className="auth-card__transition">
       <div className="auth-card__header auth-card__header--brand">
@@ -201,6 +275,17 @@ function AuthPage({ apiBaseUrl, onLogin }) {
           <input name="password" type="password" value={form.password} onChange={handleChange} required minLength={8} />
         </label>
 
+        {mode === 'login' ? (
+          <button type="button" className="link-button" onClick={() => {
+            setAuthStep('forgot');
+            setForgotError('');
+            setForgotMessage('');
+            setResetSuccess(false);
+          }}>
+            Forgot password?
+          </button>
+        ) : null}
+
         <button className="btn btn--primary" disabled={loading}>
           {loading ? 'Working...' : mode === 'login' ? 'Login' : 'Register'}
         </button>
@@ -225,25 +310,64 @@ function AuthPage({ apiBaseUrl, onLogin }) {
       </div>
 
       <form onSubmit={handleOtpSubmit}>
-        <div className={`otp-inputs ${otpShaking ? 'otp-inputs--error' : ''}`}>
-          {otp.map((digit, index) => (
-            <input
-              key={index}
-              ref={(node) => {
-                otpInputRefs.current[index] = node;
+        {!useBackupCode ? (
+          <>
+            <div className={`otp-inputs ${otpShaking ? 'otp-inputs--error' : ''}`}>
+              {otp.map((digit, index) => (
+                <input
+                  key={index}
+                  ref={(node) => {
+                    otpInputRefs.current[index] = node;
+                  }}
+                  className="otp-input"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={1}
+                  value={digit}
+                  onChange={(event) => handleOtpChange(index, event.target.value)}
+                  onKeyDown={(event) => handleOtpKeyDown(index, event)}
+                  onPaste={index === 0 ? handleOtpPaste : undefined}
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => {
+                setUseBackupCode(true);
+                setOtpError('');
+                setBackupCodeInput('');
               }}
-              className="otp-input"
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={1}
-              value={digit}
-              onChange={(event) => handleOtpChange(index, event.target.value)}
-              onKeyDown={(event) => handleOtpKeyDown(index, event)}
-              onPaste={index === 0 ? handleOtpPaste : undefined}
-            />
-          ))}
-        </div>
+            >
+              Use a backup code instead
+            </button>
+          </>
+        ) : (
+          <>
+            <label>
+              Backup code
+              <input
+                type="text"
+                value={backupCodeInput}
+                onChange={(event) => setBackupCodeInput(event.target.value)}
+                placeholder="XXXX-XXXX"
+                required
+              />
+            </label>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => {
+                setUseBackupCode(false);
+                setOtpError('');
+                setBackupCodeInput('');
+              }}
+            >
+              Use authenticator code instead
+            </button>
+          </>
+        )}
 
         {otpError ? <p className="error-text otp-error">{otpError}</p> : null}
 
@@ -256,7 +380,113 @@ function AuthPage({ apiBaseUrl, onLogin }) {
     </div>
   );
 
-  return <div className="auth-card">{authStep === 'otp' ? renderOtpView() : renderLoginView()}</div>;
+  const renderForgotView = () => (
+    <div className="auth-card__transition">
+      <button className="auth-card__back" type="button" onClick={() => {
+        setAuthStep('login');
+        setForgotError('');
+        setForgotMessage('');
+      }}>
+        ←
+      </button>
+
+      <div className="auth-card__header auth-card__header--compact">
+        <p className="eyebrow">RESET PASSWORD</p>
+        <h2>Forgot your password?</h2>
+        <p className="helper-text">Enter your email and we'll generate a reset token.</p>
+      </div>
+
+      {forgotError ? <p className="error-text">{forgotError}</p> : null}
+      {forgotMessage ? <p className="helper-text">{forgotMessage}</p> : null}
+
+      <form onSubmit={handleForgotSubmit}>
+        <label>
+          Email
+          <input
+            type="email"
+            value={forgotEmail}
+            onChange={(event) => setForgotEmail(event.target.value)}
+            required
+          />
+        </label>
+
+        <button className="btn btn--primary" disabled={forgotLoading}>
+          {forgotLoading ? 'Working...' : 'Request reset token'}
+        </button>
+      </form>
+    </div>
+  );
+
+  const renderResetView = () => (
+    <div className="auth-card__transition">
+      <button className="auth-card__back" type="button" onClick={() => {
+        setAuthStep('login');
+        setForgotError('');
+        setForgotMessage('');
+      }}>
+        ←
+      </button>
+
+      <div className="auth-card__header auth-card__header--compact">
+        <p className="eyebrow">RESET PASSWORD</p>
+        <h2>Enter your new password</h2>
+        <p className="helper-text">Use the reset token and choose a strong new password.</p>
+      </div>
+
+      {resetToken ? (
+        <label>
+          Dev mode: your reset token (would normally be emailed)
+          <input type="text" value={resetToken} readOnly />
+        </label>
+      ) : null}
+
+      {forgotError ? <p className="error-text">{forgotError}</p> : null}
+      {forgotMessage ? <p className="helper-text">{forgotMessage}</p> : null}
+
+      {resetSuccess ? (
+        <button className="btn btn--primary" type="button" onClick={() => {
+          setAuthStep('login');
+          setMode('login');
+          setForgotMessage('');
+          setResetToken('');
+          setResetTokenInput('');
+          setNewPassword('');
+          setResetSuccess(false);
+        }}>
+          Back to Login
+        </button>
+      ) : (
+        <form onSubmit={handleResetSubmit}>
+          <label>
+            Reset Token
+            <input
+              type="text"
+              value={resetTokenInput}
+              onChange={(event) => setResetTokenInput(event.target.value)}
+              required
+            />
+          </label>
+
+          <label>
+            New Password
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              required
+              minLength={8}
+            />
+          </label>
+
+          <button className="btn btn--primary" disabled={forgotLoading}>
+            {forgotLoading ? 'Working...' : 'Reset Password'}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+
+  return <div className="auth-card">{authStep === 'otp' ? renderOtpView() : authStep === 'forgot' ? renderForgotView() : authStep === 'reset' ? renderResetView() : renderLoginView()}</div>;
 }
 
 export default AuthPage;

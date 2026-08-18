@@ -3,9 +3,10 @@ from typing import List, Optional
 from uuid import uuid4
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, WebSocket
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from fastapi.websockets import WebSocketDisconnect
 
 from src.config.database import (
     create_job,
@@ -23,6 +24,8 @@ from src.services.interview_service import (
 )
 from src.utils.auth_deps import get_current_user
 from src.utils.report_access import REPORT_RETENTION_SECONDS, get_report_availability
+from src.utils.ws_manager import manager
+from src.utils.auth import decode_access_token
 
 router = APIRouter()
 
@@ -212,6 +215,75 @@ async def get_audit_status(job_id: str, current_user: dict = Depends(get_current
         "error": job.get("error"),
         "questions": questions,
     }
+
+
+@router.websocket("/audit/{job_id}/ws")
+async def audit_job_ws(websocket: WebSocket, job_id: str, token: str = Query(...)):
+    """WebSocket endpoint to stream job status for a given `job_id`.
+
+    Authentication is performed via a `token` query parameter which is
+    decoded with `decode_access_token`. If the token is invalid or the
+    token's `user_id` doesn't match the job owner, the connection is
+    rejected with code 4401.
+    """
+    # Decode token
+    try:
+        payload = decode_access_token(token)
+    except Exception:
+        await websocket.close(code=4401)
+        return
+
+    # Reject temporary 2FA tokens — only fully-verified access tokens allowed
+    if payload.get("2fa_pending"):
+        await websocket.close(code=4401)
+        return
+
+    # Fetch job and verify ownership
+    job = await get_job(job_id)
+    if not job:
+        # job not found
+        await websocket.close(code=4404)
+        return
+
+    if job.get("user_id") and job["user_id"] != payload.get("user_id"):
+        await websocket.close(code=4401)
+        return
+
+    # Accept and register connection
+    await websocket.accept()
+    await manager.connect(job_id, websocket)
+
+    # Send current status (same shape as get_audit_status)
+    questions = []
+    if job["status"] == "interview_pending":
+        stored_qa = await get_interview_qa(job_id)
+        questions = [item["question"] for item in stored_qa if item.get("question")]
+
+    status_payload = {
+        "job_id": job["id"],
+        "status": job["status"],
+        "current_agent": job.get("current_agent"),
+        "created_at": job["created_at"],
+        "updated_at": job["updated_at"],
+        "error": job.get("error"),
+        "questions": questions,
+    }
+
+    try:
+        await websocket.send_json(status_payload)
+    except Exception:
+        # If send fails, disconnect and return
+        await manager.disconnect(job_id, websocket)
+        return
+
+    # Keep connection open until client disconnects
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await manager.disconnect(job_id, websocket)
 
 
 @router.get("/audit/{job_id}/detail")

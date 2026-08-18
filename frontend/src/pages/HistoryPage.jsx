@@ -1,4 +1,8 @@
-function HistoryPage({ history, handleDownload, downloadingJobId, getBusinessLabel, formatStatus, handleResume, handleRetry }) {
+import SkeletonRows from '../components/SkeletonRows';
+
+function HistoryPage({ history, handleDownload, downloadingJobId, getBusinessLabel, formatStatus, handleResume, handleRetry, loading = false }) {
+  if (loading) return <SkeletonRows count={4} />;
+
   return (
     <div className="dashboard-grid">
       <section className="card card--wide">

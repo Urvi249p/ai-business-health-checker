@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -57,6 +59,51 @@ def decode_access_token(token: str) -> dict:
     Used by /verify-2fa to decode the temp token.
     """
     return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+
+
+def _hash_token(raw_token: str) -> str:
+    """Return the SHA-256 hash of a raw token."""
+    return hashlib.sha256(raw_token.encode()).hexdigest()
+
+
+def hash_reset_token(raw_token: str) -> str:
+    """Hash a reset token using SHA-256 for safe database lookup."""
+    return _hash_token(raw_token)
+
+
+def hash_refresh_token(raw_token: str) -> str:
+    """Hash a refresh token using SHA-256 for safe database lookup."""
+    return _hash_token(raw_token)
+
+
+def generate_reset_token() -> tuple[str, str]:
+    """Generate a URL-safe reset token and its SHA-256 hash."""
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = _hash_token(raw_token)
+    return raw_token, token_hash
+
+
+def generate_refresh_token() -> tuple[str, str]:
+    """Generate a URL-safe refresh token and its SHA-256 hash."""
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = _hash_token(raw_token)
+    return raw_token, token_hash
+
+
+# Alias — keeps any existing code using decode_token() working
+def generate_backup_codes(count: int = 10) -> list[str]:
+    """Generate human-friendly backup codes in XXXX-XXXX format."""
+    codes = []
+    for _ in range(count):
+        raw = secrets.token_hex(4).upper()
+        codes.append(f"{raw[:4]}-{raw[4:]}")
+    return codes
+
+
+def hash_backup_code(code: str) -> str:
+    """Normalize and hash a backup code for secure storage."""
+    normalized = code.strip().upper()
+    return hashlib.sha256(normalized.encode()).hexdigest()
 
 
 # Alias — keeps any existing code using decode_token() working

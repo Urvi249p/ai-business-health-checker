@@ -374,6 +374,21 @@ textarea {
   transform: none;
 }
 
+.link-button {
+  background: none;
+  border: none;
+  color: var(--primary);
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.link-button:hover {
+  color: #1d4ed8;
+}
+
 .btn--primary {
   background: var(--primary);
   color: white;
@@ -397,6 +412,28 @@ textarea {
 .card--hero {
   grid-row: span 2;
 }
+
+/* Toast styles */
+.toast {
+  min-width: 220px;
+  max-width: 360px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  color: white;
+  box-shadow: 0 6px 18px rgba(2,6,23,0.12);
+  font-weight: 600;
+  cursor: pointer;
+  transform: translateY(-6px);
+  opacity: 1;
+  transition: opacity 260ms ease, transform 260ms ease;
+}
+.toast--hide {
+  opacity: 0;
+  transform: translateY(-12px);
+}
+.toast--success { background: var(--success); }
+.toast--error { background: var(--error); }
+.toast--info { background: var(--primary); }
 
 .audit-form-card {
   display: flex;

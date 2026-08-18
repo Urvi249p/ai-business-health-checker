@@ -1,0 +1,2 @@
+tests/test_cover_page.py
+tests/test_pdf_tables.py
